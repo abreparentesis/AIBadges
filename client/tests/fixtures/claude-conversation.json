@@ -1,0 +1,9 @@
+{
+  "uuid": "c1",
+  "name": "Refactor plan",
+  "created_at": "2026-01-10T09:00:00Z",
+  "chat_messages": [
+    { "sender": "human", "text": "List the seams first.", "created_at": "2026-01-10T09:00:00Z" },
+    { "sender": "assistant", "text": "The seams are X, Y, Z.", "created_at": "2026-01-10T09:01:00Z" }
+  ]
+}

@@ -1,0 +1,16 @@
+services:
+  aibadges-backend:
+    build: .
+    container_name: aibadges-backend
+    restart: unless-stopped
+    # Bound to localhost only; public ingress is via Caddy (aibadges-api.mindmaterial.io).
+    ports:
+      - "127.0.0.1:8095:8095"
+    environment:
+      - PORT=8095
+      - DB_PATH=/data/aibadges.db
+      # Optional. Leave empty for permissionless registration (anyone can push/share a badge);
+      # set it (and the matching client WXT_AIBADGES_INVITE) to gate first-time registration.
+      - INVITE_TOKEN=${INVITE_TOKEN:-}
+    volumes:
+      - ./data:/data

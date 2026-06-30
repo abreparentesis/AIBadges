@@ -1,0 +1,18 @@
+{
+  "_comment": "Maps each model.c4 FQN to a deterministic 'is it built?' rule. Rules: {file} (+ optional minBytes) = #built if the file exists; {glob} = #built if any file matches; {fixed} pins built/planned/issue. Stage/parent status is derived from children by context-sync.py. /c4-sync FAILS LOUDLY if an FQN here no longer exists in model.c4.",
+  "elements": {
+    "aibadges.ext.capture": { "glob": "client/src/capture/**/*.ts" },
+    "aibadges.ext.engine": { "glob": "client/src/engine/**/*.ts" },
+    "aibadges.ext.inference": { "file": "client/src/inference/in-session.ts" },
+    "aibadges.ext.bridge": { "file": "client/src/capture/chatgpt-bridge.ts" },
+    "aibadges.ext.store": { "glob": "client/src/store/**/*.ts" },
+    "aibadges.ext.sync": { "file": "client/src/sync/backend.ts" },
+    "aibadges.ext.ui": { "glob": "client/entrypoints/**/*" },
+    "aibadges.backend.api": { "file": "server/src/app.ts" },
+    "aibadges.backend.report": { "file": "server/src/app.ts" },
+    "aibadges.backend.db": { "file": "server/src/db.ts" },
+    "claude": { "fixed": "built" },
+    "chatgpt": { "fixed": "built" },
+    "proxy": { "fixed": "built" }
+  }
+}

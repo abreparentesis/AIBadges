@@ -1,0 +1,190 @@
+// model.c4 — architecture of AIBadges (structure only).
+// Status (#built/#planned/#issue) is generated into status.generated.c4 by
+// .context/sync/context-sync.py (run `/c4-sync`), driven by .context/sync/id-registry.json.
+// Two lenses: a TECHNICAL one (containers/components + flow) and a FUNCTIONAL one
+// (capabilities realised by components, plus a journey per provider).
+
+specification {
+  element system     { style { shape rectangle } }
+  element container  { style { shape rectangle } }
+  element component  { style { shape rectangle } }
+  element external   { style { shape rectangle; color slate } }
+  element person     { style { shape person } }
+  element capability { style { shape rectangle; color indigo } }
+
+  tag built
+  tag planned
+  tag issue
+}
+
+model {
+
+  user = person 'User' {
+    description 'A person profiling their own AI chat history.'
+  }
+
+  aibadges = system 'AIBadges' {
+    description 'Turns a person\'s own LLM chat history into an evidence-backed living profile and shareable badges.'
+
+    ext = container 'Browser extension' {
+      technology 'WXT · MV3 · React 19 · TypeScript'
+      description 'Captures chats, runs or hands off inference, builds the profile, renders the report. The product. Raw chats stay here.'
+
+      capture = component 'Capture adapters' {
+        technology 'src/capture'
+        description 'Reads conversation history from the provider web app using the user\'s session. Claude + ChatGPT adapters; samples across the whole timeline.'
+      }
+      engine = component 'Inference engine' {
+        technology 'src/engine'
+        description 'evidence map-reduce → synthesize → assembleProfile (anchor/grade/prune) → distill to signals. Quote-verified, credibility rules enforced here.'
+      }
+      inference = component 'Claude in-session caller' {
+        technology 'src/inference/in-session.ts'
+        description 'Runs model completions inside the user\'s claude.ai tab (scratch conversation, SSE). No paid API; rate-limit aware.'
+      }
+      bridge = component 'ChatGPT bridge' {
+        technology 'src/capture/chatgpt-bridge.ts'
+        description 'Prefills the ChatGPT composer; the user presses send; reads the finished reply from the DOM. Never auto-submits.'
+      }
+      store = component 'Local store' {
+        technology 'src/store · chrome.storage'
+        description 'Profile (with evidence quotes) and the capture payload, on-device only.'
+      }
+      sync = component 'Backend sync' {
+        technology 'src/sync/backend.ts'
+        description 'The only network egress. Strips the evidence array (chatPrivateProfile) so only the badge crosses.'
+      }
+      ui = component 'UI surfaces' {
+        technology 'entrypoints: popup, results, chatgpt, background'
+        description 'Run control + status, the gamified profile report, the ChatGPT handoff page, the badge state machine.'
+      }
+    }
+
+    backend = container 'Backend' {
+      technology 'Hono · bun:sqlite · Bun'
+      description 'Thin service. Stores the distilled badge, mints share tokens, renders public reports. Never sees raw chats.'
+
+      api = component 'Badge API' {
+        technology 'POST/GET /v1/profile · /v1/signals'
+        description 'Per-user bearer key + invite self-register. Validates an evidence-free profile; CORS-open for content-script calls.'
+      }
+      report = component 'Public report' {
+        technology 'GET /s/:token'
+        description 'Server-rendered HTML of the owner\'s PUBLIC sections, mirroring the in-app UI, with OpenGraph tags.'
+      }
+      db = component 'SQLite store' {
+        technology 'bun:sqlite'
+        description 'users, profile_versions, signals. Persisted in a mounted volume.'
+      }
+    }
+  }
+
+  claude = external 'Claude.ai' {
+    description 'The user\'s Claude session. Internal API for history + in-session completions.'
+  }
+  chatgpt = external 'ChatGPT' {
+    description 'The user\'s ChatGPT session. Read-only history API; the user\'s own model runs the analysis (no paid API, no bot-bypass).'
+  }
+  proxy = external 'Caddy reverse proxy' {
+    description 'Terminates TLS at aibadges-api.mindmaterial.io and forwards to the backend on localhost.'
+  }
+
+  // ── Technical flow ──
+  user -> ui 'clicks the AIBadges icon'
+  ui -> capture 'start a run'
+  capture -> claude 'reads history (in-session)'
+  capture -> chatgpt 'reads history (read-only)'
+  engine -> inference 'evidence + synthesis (Claude)'
+  inference -> claude 'scratch completion'
+  bridge -> chatgpt 'prefill → user sends → read reply'
+  capture -> engine 'conversations'
+  engine -> store 'profile + evidence (local)'
+  engine -> sync 'badge'
+  sync -> proxy 'POST badge (no chats)'
+  proxy -> api 'forwards'
+  api -> db 'reads/writes'
+  report -> db 'reads public signals'
+  user -> proxy 'opens a shared /s/:token'
+  proxy -> report 'forwards'
+
+  // ── Functional decomposition ──
+  caps = capability 'Capabilities' {
+    description 'What AIBadges does for its users, independent of implementation.'
+
+    capCapture = capability 'Capture chat history' {
+      description 'Read the user\'s own conversations from the provider, using their session.'
+    }
+    capProfile = capability 'Profile how you think' {
+      description 'Produce an evidence-anchored behavioral profile; every claim links to its quotes.'
+    }
+    capPrivacy = capability 'Keep chats private' {
+      description 'Process chats only in the user\'s own AI; sync only the badge, never raw chats.'
+    }
+    capShare = capability 'Share a badge' {
+      description 'Opt-in public report of the sections the user chooses.'
+    }
+  }
+
+  capCapture -> capture 'realised by'
+  capCapture -> bridge 'realised by'
+  capProfile -> engine 'realised by'
+  capProfile -> inference 'realised by'
+  capPrivacy -> sync 'realised by'
+  capPrivacy -> store 'realised by'
+  capShare -> api 'realised by'
+  capShare -> report 'realised by'
+}
+
+views {
+  view index {
+    title 'AIBadges — overview (technical)'
+    include *
+    exclude caps, capCapture, capProfile, capPrivacy, capShare
+    style element.tag = #built { color green }
+    style element.tag = #planned { color amber }
+    style element.tag = #issue { color red }
+  }
+
+  view of aibadges {
+    title 'AIBadges — internals'
+    include *
+    style element.tag = #built { color green }
+    style element.tag = #planned { color amber }
+    style element.tag = #issue { color red }
+  }
+
+  view capabilities {
+    title 'Functional view — capabilities → components'
+    include caps, caps.*
+    include capCapture -> *, capProfile -> *, capPrivacy -> *, capShare -> *
+    style element.tag = #built { color green }
+    style element.tag = #planned { color amber }
+  }
+
+  dynamic view journeyClaude {
+    title 'Journey — Claude (in-session, automatic)'
+    user -> ui 'clicks the icon'
+    ui -> capture 'start'
+    capture -> claude 'read history'
+    capture -> engine 'conversations'
+    engine -> inference 'run analysis'
+    inference -> claude 'scratch completion'
+    engine -> store 'store profile + evidence'
+    engine -> sync 'badge'
+    sync -> proxy 'POST badge'
+    proxy -> api 'store'
+  }
+
+  dynamic view journeyChatGpt {
+    title 'Journey — ChatGPT (bridge, user sends)'
+    user -> ui 'clicks the icon'
+    ui -> capture 'capture history'
+    capture -> chatgpt 'read history'
+    ui -> bridge 'run it in ChatGPT'
+    bridge -> chatgpt 'prefill; user sends; read reply'
+    bridge -> engine 'import reply'
+    engine -> store 'store profile + evidence'
+    engine -> sync 'badge'
+    sync -> proxy 'POST badge'
+  }
+}

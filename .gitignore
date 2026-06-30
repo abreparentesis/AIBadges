@@ -1,0 +1,27 @@
+# Local Claude Code settings (per-machine; not shared)
+.claude/settings.local.json
+
+# OS / editor cruft
+.DS_Store
+*.swp
+
+# Superpowers brainstorm scratch (visual companion)
+.superpowers/
+
+# Node (future)
+node_modules/
+# LikeC4 architecture viz
+.context/architecture/dist/
+.context/architecture/node_modules/
+.context/architecture/status.generated.c4
+
+# Local Claude Code MCP config (per-machine; not shared)
+.mcp.json
+
+# Local session handoff logs (internal; not for the public repo)
+docs/handoff/
+
+# Internal planning docs (kept locally, not published)
+docs/superpowers/
+docs/mockups/
+docs/2026-06-05-brainstorm-context.md
