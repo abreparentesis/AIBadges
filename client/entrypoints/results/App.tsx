@@ -18,11 +18,12 @@ const kv = {
 // Map each report section to the signal type it shares.
 const SECTION_TYPE = { type: 'typeCard', thinking: 'identityCard', trajectory: 'trajectorySnippet' } as const;
 type Tab = 'personality' | 'literacy';
+// weak = only partly visible from chat (the real behavior happens off-platform), so we surface a caveat.
 const FLUENCY = [
-  ['delegation', 'Delegation', 'Handing whole tasks to the model'],
-  ['description', 'Description', 'Framing prompts and context'],
-  ['discernment', 'Discernment', 'Judging output quality'],
-  ['diligence', 'Diligence', 'Verifying before acting'],
+  ['delegation', 'Delegation', 'What you hand off and how you scope it', true],
+  ['description', 'Description', 'How clearly you prompt and give context', false],
+  ['discernment', 'Discernment', 'Pushing back and judging output quality', false],
+  ['diligence', 'Diligence', 'Verification signals in your chats', true],
 ] as const;
 const AXIS_WORD: Record<string, string> = { E: 'Extraversion', I: 'Introversion', S: 'Sensing', N: 'iNtuition', T: 'Thinking', F: 'Feeling', J: 'Judging', P: 'Perceiving' };
 const TRAIT_ACCENT = ['high', 'medium', 'low'];
@@ -209,6 +210,7 @@ export default function App() {
                 <div className="bb-eyebrow" style={{ color: t.blue }}>Overall level</div>
                 <div style={{ fontSize: 26, fontWeight: 700, margin: '6px 0 4px' }}>{level.name}</div>
                 <div className="bb-muted" style={{ fontSize: 14 }}>Explorer &rarr; Operator &rarr; Practitioner &rarr; Orchestrator</div>
+                <div style={{ fontSize: 12, color: t.g500, marginTop: 4 }}>Chat shows fluency up to Practitioner; Orchestrator reflects directing agents and tools (e.g. Claude Code), which chat can&rsquo;t see.</div>
                 {stageQuotes.length > 0 && <Evidence quotes={stageQuotes} style={{ marginTop: 10 }} />}
               </div>
             </div>
@@ -219,7 +221,7 @@ export default function App() {
                   onChange={(next) => toggle('statBadge', next)} />
               )} />
             <div className="bb-grid2">
-              {FLUENCY.map(([key, label, desc]) => {
+              {FLUENCY.map(([key, label, desc, weak]) => {
                 const band = cap.aiFluency[key].band;
                 const quotes = quotesFor(cap.aiFluency[key].evidenceIds);
                 return (
@@ -229,6 +231,7 @@ export default function App() {
                       <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: '#fff', background: bandColor[band] ?? t.g500, padding: '3px 10px', borderRadius: 50 }}>{band}</span>
                     </div>
                     <div className="bb-muted" style={{ fontSize: 13, marginTop: 4 }}>{desc}</div>
+                    {weak && <div style={{ fontSize: 11, color: t.g500, marginTop: 6, fontStyle: 'italic' }}>Only partly visible from chat &mdash; the real signal is off-platform.</div>}
                     {quotes.length > 0 && <Evidence quotes={quotes} style={{ marginTop: 10 }} />}
                   </div>
                 );
@@ -242,7 +245,7 @@ export default function App() {
 
             <SecH dot={t.success} title="Grow your AI literacy" cap="personalized" />
             {steps.length === 0 ? (
-              <div className="bb-muted">You&rsquo;re at an advanced band across all four dimensions. Keep pushing the edges.</div>
+              <div className="bb-muted">You&rsquo;re fluent across what your chats reveal. The next rung &mdash; orchestrating agents and tools across multi-step work &mdash; grows outside chat, in tools like Claude Code.</div>
             ) : steps.map((s) => (
               <div key={s.dimension} className="bb-card" style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -259,7 +262,7 @@ export default function App() {
             ))}
 
             <footer className="bb-muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 30, paddingTop: 18, borderTop: `1px solid ${t.g200}`, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
-              AI-fluency scored by a language model from your chats against the Anthropic 4D framework (Delegation, Description, Discernment, Diligence) plus a 1&ndash;8 developer-agent stage. Self-computed in your own AI session. Not verified by us.
+              AI-fluency scored by a language model from your chats against the Anthropic 4D framework (Delegation, Description, Discernment, Diligence) plus a 1&ndash;8 fluency stage. Chat shows Description and Discernment well but only hints at Delegation and Diligence, and the top stage reflects agent orchestration chat rarely captures. Self-computed in your own AI session. Not verified by us.
             </footer>
           </>
         );
