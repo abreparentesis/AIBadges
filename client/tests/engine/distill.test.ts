@@ -50,8 +50,35 @@ describe('distill', () => {
     expect(c.group).toBe('Analysts');
   });
 
-  it('no longer emits a statBadge signal', () => {
+  it('does not emit a statBadge signal when capability is absent', () => {
     expect(distill(profile, '2026-06-05T00:00:00Z').some((s) => s.type === 'statBadge')).toBe(false);
+  });
+
+  it('emits a correctly-shaped statBadge signal when capability is present', () => {
+    const withCapability: Profile = {
+      ...profile,
+      capability: {
+        aiFluency: {
+          delegation: { band: 'proficient', evidenceIds: ['e1'] },
+          description: { band: 'advanced', evidenceIds: ['e1'] },
+          discernment: { band: 'developing', evidenceIds: [] },
+          diligence: { band: 'emerging', evidenceIds: [] },
+        },
+        yeggeStage: { stage: 4, evidenceIds: ['e1'] },
+        domains: [{ name: 'software engineering', band: 'advanced', evidenceIds: ['e1'] }],
+      },
+    };
+    const signals = distill(withCapability, '2026-06-05T00:00:00Z');
+    const badge = signals.find((s) => s.type === 'statBadge');
+    expect(badge).toBeTruthy();
+    expect(SignalSchema.safeParse(badge).success).toBe(true);
+    expect(badge!.id).toBe(`sig-stat-${withCapability.version}`);
+    expect(badge!.disclosure).toBe('private');
+    expect(badge!.provenanceLabel).toBe(PROVENANCE_LABEL);
+    expect(badge!.surfacedContent).toEqual({
+      yeggeStage: 4,
+      aiFluency: { delegation: 'proficient', description: 'advanced', discernment: 'developing', diligence: 'emerging' },
+    });
   });
 
   it('typeCard carries the axes so the share card can show stat bars', () => {

@@ -223,6 +223,50 @@ describe('share viewer (HTML)', () => {
   });
 });
 
+describe('AI Literacy (statBadge) share render', () => {
+  it('renders the Yegge stage and dimension bands when public', async () => {
+    const app = makeApp();
+    const res = await call(app, 'POST', '/v1/signals', {
+      key: 'kal', invite: INVITE,
+      body: [{ type: 'statBadge', disclosure: 'public', surfacedContent: {
+        yeggeStage: 5,
+        aiFluency: { delegation: 'proficient', description: 'advanced', discernment: 'developing', diligence: 'proficient' },
+      } }],
+    });
+    const token = (await res.json()).signals[0].shareToken as string;
+    expect(token).toBeTruthy();
+
+    const page = await app.request(`/s/${token}`);
+    expect(page.status).toBe(200);
+    const html = await page.text();
+    expect(html).toContain('AI Literacy');
+    expect(html).toContain('Stage 5');
+    expect(html).toContain('proficient');
+    expect(html).toContain('advanced');
+  });
+
+  it('does not render the AI Literacy section when statBadge is private', async () => {
+    const app = makeApp();
+    const res = await call(app, 'POST', '/v1/signals', {
+      key: 'kal2', invite: INVITE,
+      body: [
+        TC(),
+        { type: 'statBadge', disclosure: 'private', surfacedContent: {
+          yeggeStage: 5,
+          aiFluency: { delegation: 'proficient', description: 'advanced', discernment: 'developing', diligence: 'proficient' },
+        } },
+      ],
+    });
+    const sigs = (await res.json()).signals as Array<{ type: string; shareToken: string | null }>;
+    const typeToken = sigs.find((s) => s.type === 'typeCard')!.shareToken as string;
+
+    const page = await app.request(`/s/${typeToken}`);
+    const html = await page.text();
+    expect(html).not.toContain('AI Literacy');
+    expect(html).not.toContain('Stage 5');
+  });
+});
+
 describe('typeCard share render', () => {
   it('renders the code, name, and a bar per axis', () => {
     const html = renderCardBody('typeCard', {

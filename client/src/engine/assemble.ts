@@ -1,9 +1,10 @@
-import { Profile, ProfileSchema, EvidenceUnit, Confidence, Claim, Trajectory, CognitiveType } from './types';
+import { Profile, ProfileSchema, EvidenceUnit, Confidence, Claim, Trajectory, CognitiveType, Capability } from './types';
 
 export interface ProfileParts {
   thinking: Claim[];
   trajectory: Trajectory; // window + shifts
   type?: CognitiveType;
+  capability?: Capability;
   evidence: EvidenceUnit[];
 }
 
@@ -20,7 +21,7 @@ export interface AssembleOpts {
 // an axis with no surviving evidence goes neutral; only the referenced evidence is retained. Pure,
 // no model calls — both pipelines feed it so the bar is identical regardless of provider.
 export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profile {
-  const { thinking, trajectory, type: cogType, evidence } = parts;
+  const { thinking, trajectory, type: cogType, capability, evidence } = parts;
   const evById = new Map(evidence.map((e) => [e.id, e]));
   // Dedupe as well as prune: a repeated id must not inflate the evidence count.
   const keep = (ids: string[]) => [...new Set(ids.filter((id) => evById.has(id)))];
@@ -71,6 +72,27 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       : { ...cogType, axes, confidence: gradeConfidence(allTypeIds) };
   }
 
+  // capability: prune evidenceIds per aiFluency dimension but KEEP the band even if ids become
+  // empty (a band is a critical assessment we don't want to silently drop). Prune yeggeStage ids.
+  // Drop any domain whose evidenceIds don't survive, like thinking claims.
+  let capabilityAnchored: Profile['capability'];
+  if (capability) {
+    const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; evidenceIds: string[] }) =>
+      ({ ...b, evidenceIds: keep(b.evidenceIds) });
+    const aiFluency = {
+      delegation: anchorBanded(capability.aiFluency.delegation),
+      description: anchorBanded(capability.aiFluency.description),
+      discernment: anchorBanded(capability.aiFluency.discernment),
+      diligence: anchorBanded(capability.aiFluency.diligence),
+    };
+    const yeggeStage = { ...capability.yeggeStage, evidenceIds: keep(capability.yeggeStage.evidenceIds) };
+    const domains = capability.domains.flatMap((d) => {
+      const ids = keep(d.evidenceIds);
+      return ids.length === 0 ? [] : [{ ...d, evidenceIds: ids }];
+    });
+    capabilityAnchored = { aiFluency, yeggeStage, domains };
+  }
+
   // Store only the evidence actually referenced by surviving claims/axes/shifts, in original order.
   const referenced = new Set<string>();
   thinkingAnchored.forEach((c) => c.evidenceIds.forEach((id) => referenced.add(id)));
@@ -79,12 +101,20 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
     const a = typeAnchored.axes;
     [...a.EI.evidenceIds, ...a.SN.evidenceIds, ...a.TF.evidenceIds, ...a.JP.evidenceIds].forEach((id) => referenced.add(id));
   }
+  if (capabilityAnchored) {
+    const f = capabilityAnchored.aiFluency;
+    [...f.delegation.evidenceIds, ...f.description.evidenceIds, ...f.discernment.evidenceIds, ...f.diligence.evidenceIds]
+      .forEach((id) => referenced.add(id));
+    capabilityAnchored.yeggeStage.evidenceIds.forEach((id) => referenced.add(id));
+    capabilityAnchored.domains.forEach((d) => d.evidenceIds.forEach((id) => referenced.add(id)));
+  }
   const usedEvidence: EvidenceUnit[] = evidence.filter((e) => referenced.has(e.id));
 
   const profile: Profile = {
     version: opts.version, computedAt: opts.now, modelProvenance: opts.modelProvenance,
     sourceWindow: opts.sourceWindow,
     thinking: thinkingAnchored, trajectory: trajectoryAnchored, type: typeAnchored,
+    ...(capabilityAnchored ? { capability: capabilityAnchored } : {}),
     evidence: usedEvidence,
   };
   return ProfileSchema.parse(profile);

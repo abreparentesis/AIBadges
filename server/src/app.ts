@@ -60,6 +60,7 @@ function renderReportPage(
 ): string {
   const byType = (t: string) => signals.find((s) => s.type === t)?.surfacedContent;
   const typeC = byType('typeCard');
+  const statC = byType('statBadge');
   const identityC = byType('identityCard');
   const trajC = byType('trajectorySnippet');
 
@@ -77,6 +78,28 @@ function renderReportPage(
       <div class="hero">
         <div class="herocard">${renderCardBody('typeCard', typeC)}</div>
         <div class="herosum">${esc(typeC.summary ?? '')}</div>
+      </div>
+    </section>`;
+  }
+
+  // AI Literacy — Yegge stage + the four aiFluency dimension bands.
+  let literacySection = '';
+  if (statC) {
+    const f = (statC.aiFluency ?? {}) as Record<string, unknown>;
+    const DIM_LABEL: Record<string, string> = {
+      delegation: 'Delegation', description: 'Description', discernment: 'Discernment', diligence: 'Diligence',
+    };
+    const rows = ['delegation', 'description', 'discernment', 'diligence']
+      .filter((k) => f[k] !== undefined)
+      .map((k) => `<div class="mrow">
+        <span class="dim">${esc(DIM_LABEL[k] ?? k)}</span>
+        <span class="vel">${esc(f[k])}</span>
+      </div>`).join('');
+    literacySection = `<section class="sec">
+      <div class="sech"><span class="dot" style="background:#0046ff"></span><h2>AI Literacy</h2></div>
+      <div class="hero">
+        <div class="herocard">${renderCardBody('statBadge', statC)}</div>
+        <div class="herosum">${rows}</div>
       </div>
     </section>`;
   }
@@ -144,6 +167,15 @@ main{max-width:760px;margin:0 auto;padding:34px 24px 60px}
 .hero{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
 .herocard{flex:0 0 auto}
 .herosum{flex:1;min-width:260px;font-size:18px;line-height:1.55;color:var(--g700)}
+.herosum .mrow:last-child{margin-bottom:0}
+/* Fluency stat card (wraps renderCardBody('statBadge', ...) output) */
+.herocard:has(.brand){width:220px;background:#fff;border:1px solid var(--g200);border-radius:22px;
+  padding:24px 22px;box-shadow:0 10px 28px rgba(17,25,39,.06)}
+.brand{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--blue)}
+.big{font-size:40px;font-weight:800;margin:10px 0 4px;letter-spacing:-.02em;color:var(--g900)}
+.herocard ul{list-style:none;margin:12px 0 0;padding:0;font-size:13px;color:var(--g600)}
+.herocard ul li{padding:4px 0}
+.herocard ul li b{color:var(--g900)}
 /* Collectible hero card (ported from theme.css .holo, dark gradient on a white page) */
 .holo{--col:#5737f4;width:330px;border-radius:22px;overflow:hidden;position:relative;color:#fff;
   background:linear-gradient(160deg,color-mix(in srgb,var(--col) 70%,#fff 0%),var(--col) 55%,#1b0e8c);
@@ -184,7 +216,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--g200);font-si
 </style></head>
 <body>
 <div class="topbar"><span class="mark">AIBadges</span><span class="sub">living profile</span></div>
-<main>${typeSection}${thinkingSection}${trajSection}</main>
+<main>${typeSection}${literacySection}${thinkingSection}${trajSection}</main>
 <footer>${esc(provenance)} Public-domain Jungian dichotomies (E/I, S/N, T/F, J/P). Not affiliated with or derived from the Myers-Briggs Type Indicator® or The Myers-Briggs Company.</footer>
 </body></html>`;
 }

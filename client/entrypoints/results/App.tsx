@@ -5,7 +5,9 @@ import { lookupType } from '../../src/engine/typeTable';
 import { ensureUserKey } from '../../src/store/userkey';
 import { BackendSync } from '../../src/sync/backend';
 import { BACKEND_URL, INVITE_TOKEN, shareUrl } from '../../src/config';
-import { t } from '../../src/ui/tokens';
+import { namedLevel } from '../../src/engine/levels';
+import { learningPath } from '../../src/engine/learningPath';
+import { t, bandColor } from '../../src/ui/tokens';
 
 type UiSignal = Signal & { shareToken?: string | null };
 type Quote = { quote: string; date: string };
@@ -15,6 +17,13 @@ const kv = {
 };
 // Map each report section to the signal type it shares.
 const SECTION_TYPE = { type: 'typeCard', thinking: 'identityCard', trajectory: 'trajectorySnippet' } as const;
+type Tab = 'personality' | 'literacy';
+const FLUENCY = [
+  ['delegation', 'Delegation', 'Handing whole tasks to the model'],
+  ['description', 'Description', 'Framing prompts and context'],
+  ['discernment', 'Discernment', 'Judging output quality'],
+  ['diligence', 'Diligence', 'Verifying before acting'],
+] as const;
 const AXIS_WORD: Record<string, string> = { E: 'Extraversion', I: 'Introversion', S: 'Sensing', N: 'iNtuition', T: 'Thinking', F: 'Feeling', J: 'Judging', P: 'Perceiving' };
 const TRAIT_ACCENT = ['high', 'medium', 'low'];
 const ARROW: Record<string, string> = { rising: '↑', falling: '↓', steady: '→' };
@@ -23,6 +32,7 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [signals, setSignals] = useState<UiSignal[]>([]);
   const [busy, setBusy] = useState('');
+  const [tab, setTab] = useState<Tab>('personality');
 
   // Index the verified quotes once per profile, then resolve claim/axis/shift ids → quotes.
   // Old profiles may lack `evidence`; quotesFor then yields [] and no expander is rendered.
@@ -85,9 +95,12 @@ export default function App() {
   };
   // Any public section's token resolves to the same public report, so any one works as the link.
   const shareToken = signals.find((s) => s.disclosure === 'public' && s.shareToken)?.shareToken ?? null;
+  const cap = profile.capability;
 
   return (
     <Shell>
+      <Tabs tab={tab} onPick={setTab} />
+      {tab === 'personality' && (<>
       <div className="bb-eyebrow">Living profile · v{profile.version}</div>
       <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.01em', margin: '8px 0 6px' }}>How you think</h1>
       <p className="bb-muted" style={{ fontSize: 16, margin: 0, maxWidth: 580 }}>
@@ -168,6 +181,89 @@ export default function App() {
         Computed by a language model from your chats; claims are shown only when backed by quotes you can inspect. Treat it as a thoughtful read, not a measurement.
         {' '}Self-computed in your own AI session. Not verified by us. Cognitive Type uses public-domain Jungian dichotomies (E/I, S/N, T/F, J/P); not affiliated with the Myers-Briggs Type Indicator® or The Myers-Briggs Company.
       </footer>
+      </>)}
+
+      {tab === 'literacy' && !cap && (
+        <div className="bb-card" style={{ marginTop: 24, color: t.g600 }}>
+          Your AI literacy levels aren&rsquo;t in this profile yet. Re-run profiling from the AIBadges popup to generate them.
+        </div>
+      )}
+      {tab === 'literacy' && cap && (() => {
+        const level = namedLevel(cap.yeggeStage.stage);
+        const steps = learningPath(cap);
+        const stageQuotes = quotesFor(cap.yeggeStage.evidenceIds);
+        return (
+          <>
+            <div className="bb-eyebrow" style={{ color: t.blue }}>AI literacy</div>
+            <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.01em', margin: '8px 0 6px' }}>How capably you operate</h1>
+            <p className="bb-muted" style={{ fontSize: 16, margin: 0, maxWidth: 580 }}>
+              An evidence-backed read of your AI-working maturity from your own {sourceLabel} history, across four fluency dimensions. This is a reflection, not a certification.
+            </p>
+
+            <div className="bb-card" style={{ marginTop: 22, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+              <div style={{ width: 108, height: 108, borderRadius: 18, background: 'linear-gradient(150deg,#3f86ff,#0046ff 55%,#103d9f)', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
+                <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1 }}>{cap.yeggeStage.stage}</div>
+                <div style={{ fontSize: 10, opacity: 0.85, marginTop: 5, letterSpacing: '.08em', textTransform: 'uppercase' }}>Stage of 8</div>
+              </div>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <div className="bb-eyebrow" style={{ color: t.blue }}>Overall level</div>
+                <div style={{ fontSize: 26, fontWeight: 700, margin: '6px 0 4px' }}>{level.name}</div>
+                <div className="bb-muted" style={{ fontSize: 14 }}>Explorer &rarr; Operator &rarr; Practitioner &rarr; Orchestrator</div>
+                {stageQuotes.length > 0 && <Evidence quotes={stageQuotes} style={{ marginTop: 10 }} />}
+              </div>
+            </div>
+
+            <SecH dot={t.blue} title="Your four fluencies" cap="AI-fluency · evidence-backed"
+              toggle={sigFor('statBadge') && (
+                <Toggle label="AI literacy" pub={isPublic('statBadge')} busy={busy === 'statBadge'}
+                  onChange={(next) => toggle('statBadge', next)} />
+              )} />
+            <div className="bb-grid2">
+              {FLUENCY.map(([key, label, desc]) => {
+                const band = cap.aiFluency[key].band;
+                const quotes = quotesFor(cap.aiFluency[key].evidenceIds);
+                return (
+                  <div key={key} className="bb-card" style={{ padding: '16px 18px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>{label}</div>
+                      <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: '#fff', background: bandColor[band] ?? t.g500, padding: '3px 10px', borderRadius: 50 }}>{band}</span>
+                    </div>
+                    <div className="bb-muted" style={{ fontSize: 13, marginTop: 4 }}>{desc}</div>
+                    {quotes.length > 0 && <Evidence quotes={quotes} style={{ marginTop: 10 }} />}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 18 }}>
+              {shareToken
+                ? <ShareRow url={shareUrl(shareToken)} />
+                : <span className="bb-muted" style={{ fontSize: 13 }}>Make a section public to get a shareable link.</span>}
+            </div>
+
+            <SecH dot={t.success} title="Grow your AI literacy" cap="personalized" />
+            {steps.length === 0 ? (
+              <div className="bb-muted">You&rsquo;re at an advanced band across all four dimensions. Keep pushing the edges.</div>
+            ) : steps.map((s) => (
+              <div key={s.dimension} className="bb-card" style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, textTransform: 'capitalize', color: t.g700 }}>{s.dimension}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: '#fff', background: bandColor[s.band] ?? t.g500, padding: '2px 9px', borderRadius: 50 }}>{s.band}</span>
+                </div>
+                <div style={{ fontSize: 15, lineHeight: 1.55, margin: '8px 0 10px' }}>{s.how}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+                  {s.links.map((l) => (
+                    <a key={l.url} href={l.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 500 }}>{l.label} &rarr;</a>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <footer className="bb-muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 30, paddingTop: 18, borderTop: `1px solid ${t.g200}`, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.6 }}>
+              AI-fluency scored by a language model from your chats against the Anthropic 4D framework (Delegation, Description, Discernment, Diligence) plus a 1&ndash;8 developer-agent stage. Self-computed in your own AI session. Not verified by us.
+            </footer>
+          </>
+        );
+      })()}
     </Shell>
   );
 }
@@ -187,6 +283,23 @@ function HoloCard({ type }: { type: NonNullable<Profile['type']> }) {
         ))}
       </div>
       <div className="hfoot"><span>AIBadges</span><span>behavioral · no quiz</span></div>
+    </div>
+  );
+}
+
+function Tabs({ tab, onPick }: { tab: Tab; onPick: (t: Tab) => void }) {
+  const item = (id: Tab, label: string) => (
+    <button type="button" onClick={() => onPick(id)} aria-pressed={tab === id}
+      style={{
+        fontFamily: 'inherit', fontSize: 14, fontWeight: 600, border: 'none', background: 'transparent',
+        cursor: 'pointer', padding: '10px 2px', color: tab === id ? t.g900 : t.g500,
+        borderBottom: `2px solid ${tab === id ? t.blue : 'transparent'}`,
+      }}>{label}</button>
+  );
+  return (
+    <div style={{ display: 'flex', gap: 24, borderBottom: `1px solid ${t.g200}`, margin: '0 0 20px' }}>
+      {item('personality', 'Personality')}
+      {item('literacy', 'AI Literacy')}
     </div>
   );
 }

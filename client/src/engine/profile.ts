@@ -3,6 +3,7 @@ import type { ModelCaller } from '../inference/types';
 import { Profile } from './types';
 import { extractEvidence } from './evidence';
 import { synthesize, type SynthesisDebug } from './synthesize';
+import { computeCapability } from './capability';
 import { assembleProfile } from './assemble';
 
 export type Phase = { phase: 'evidence' | 'synthesis'; done: number; total: number };
@@ -29,14 +30,19 @@ export async function buildProfile(convos: RawConversation[], caller: ModelCalle
   });
 
   opts.onPhase?.({ phase: 'synthesis', done: 0, total: 1 });
-  const { thinking, trajectory, type: cogType } = await synthesize(evidence, caller, opts.bestModel, opts.onSynthesisDebug);
+  // Capability is a secondary lens computed off the same evidence; run it concurrently with
+  // synthesis so it adds ~no wall-clock (it never throws — a failure resolves to null).
+  const [{ thinking, trajectory, type: cogType }, capability] = await Promise.all([
+    synthesize(evidence, caller, opts.bestModel, opts.onSynthesisDebug),
+    computeCapability(evidence, caller, opts.bestModel),
+  ]);
   opts.onPhase?.({ phase: 'synthesis', done: 1, total: 1 });
 
   // Anchoring, confidence grading, and evidence pruning are shared with the ChatGPT import path
   // (assembleProfile) so both providers meet the same credibility bar.
   const dates = convos.map((c) => c.createdAt).sort();
   return assembleProfile(
-    { thinking, trajectory, type: cogType, evidence },
+    { thinking, trajectory, type: cogType ?? undefined, capability: capability ?? undefined, evidence },
     {
       version: opts.version, now: opts.now, modelProvenance: opts.modelProvenance,
       sourceWindow: { fromDate: dates[0] ?? opts.now, toDate: dates[dates.length - 1] ?? opts.now, conversationCount: convos.length },

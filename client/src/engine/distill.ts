@@ -35,5 +35,19 @@ export function distill(profile: Profile, now: string): Signal[] {
       },
     });
   }
+  if (profile.capability) {
+    const f = profile.capability.aiFluency;
+    signals.push({
+      ...base, id: `sig-stat-${profile.version}`, type: 'statBadge',
+      surfacedContent: {
+        yeggeStage: profile.capability.yeggeStage.stage,
+        aiFluency: {
+          delegation: f.delegation.band, description: f.description.band,
+          discernment: f.discernment.band, diligence: f.diligence.band,
+        },
+      },
+    });
+  }
+
   return signals;
 }
