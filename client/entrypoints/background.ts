@@ -83,8 +83,10 @@ export default defineBackground(() => {
         // Invisible ChatGPT run: open chatgpt.com in a BACKGROUND tab (active:false) with the flag the
         // content script checks on load. It captures, analyzes in a throwaway conversation, deletes
         // it, and imports — the user never sees a chat.
+        // NOTE: do NOT arm() here — that watchdog is Claude-specific (it looks for a claude.ai tab)
+        // and would falsely fail this ChatGPT run after 60s. The autorun reports its own done/error.
         chrome.storage.local.set({ 'aibadges:cg:autorun': 1, 'aibadges:status': 'running', 'aibadges:progress': null });
-        blink = true; running(); chrome.tabs.create({ url: 'https://chatgpt.com/', active: false }); arm(); break;
+        blink = true; running(); chrome.tabs.create({ url: 'https://chatgpt.com/', active: false }); break;
       case 'aibadges:cg-autorun-done':
         // The invisible worker tab (the sender) finished: close it and surface the fresh profile.
         disarm();
