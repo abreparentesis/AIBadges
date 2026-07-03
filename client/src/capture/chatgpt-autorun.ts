@@ -31,6 +31,25 @@ function conversationId(): string | null {
   return m ? m[1] : null;
 }
 
+// After a submit, ChatGPT navigates from "/" to "/c/{id}" a beat later (once the response starts),
+// so the id is not there immediately. Poll the URL until it appears. As a fallback (in case the SPA
+// route lags badly in a throttled background tab), take the most recently updated conversation.
+async function awaitConversationId(token: string, timeoutMs = 45000, everyMs = 800): Promise<string | null> {
+  const start = Date.now();
+  let id = conversationId();
+  while (!id && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, everyMs));
+    id = conversationId();
+  }
+  if (id) return id;
+  try {
+    const j = await fetch(`${BASE}/backend-api/conversations?offset=0&limit=1&order=updated`, {
+      credentials: 'include', headers: { authorization: `Bearer ${token}` },
+    }).then((r) => (r.ok ? r.json() : null));
+    return j?.items?.[0]?.id ?? null;
+  } catch { return null; }
+}
+
 // Fill the composer and click ChatGPT's own send button, retrying while React enables the button.
 // A visible challenge means we cannot submit unattended, so surface it rather than hang.
 async function submitPrompt(prompt: string): Promise<void> {
@@ -97,7 +116,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   const token = await accessToken();
   log('submitting analysis prompt…');
   await submitPrompt(buildBridgePrompt(bundle));
-  const id = conversationId();
+  const id = await awaitConversationId(token);
   log('submitted; conversation id =', id);
   if (!id) throw new Error('ChatGPT did not start a conversation.');
   const reply = await awaitReply(id, token);
