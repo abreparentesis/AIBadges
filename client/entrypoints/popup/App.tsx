@@ -231,11 +231,15 @@ function ChatGptPanel() {
 
   useEffect(() => {
     (async () => {
-      const r = await chrome.storage.local.get('aibadges:status');
+      const r = await chrome.storage.local.get(['aibadges:status', 'aibadges:cg:running', 'aibadges:progress']);
       setHasProfile(r['aibadges:status'] === 'done');
-      // Reattach to an in-flight run if the popup was reopened mid-run; otherwise idle. A leftover
-      // capture bundle no longer routes anywhere — the invisible run captures fresh each time.
-      if (await pingCaptureAlive()) setMode('capturing');
+      // Reattach to an in-flight run from durable storage (the background persists cg:running +
+      // progress), so reopening the popup mid-run shows the progress bar, not the start button.
+      if (r['aibadges:cg:running']) {
+        setMode('capturing');
+        const p = r['aibadges:progress'] as { done?: number; total?: number; phase?: string } | null;
+        if (p && typeof p.done === 'number') setProg({ done: p.done, total: p.total ?? 0, phase: p.phase });
+      }
     })();
     const onMsg = (m: any) => {
       if (m?.type === 'aibadges:cg-phase') setProg({ done: m.done, total: m.total, phase: m.phase });

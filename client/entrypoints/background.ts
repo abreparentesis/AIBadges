@@ -79,24 +79,27 @@ export default defineBackground(() => {
         // The in-ChatGPT bridge finished on the chatgpt.com tab (a content script can't open tabs),
         // so it asks the background to surface the freshly built profile.
         chrome.tabs.create({ url: chrome.runtime.getURL('results.html') }); break;
+      case 'aibadges:cg-phase':
+        // Persist ChatGPT run progress so reopening the popup mid-run shows the bar, not the button.
+        chrome.storage.local.set({ 'aibadges:progress': { phase: msg.phase, done: msg.done, total: msg.total } }); break;
       case 'aibadges:cg-autorun':
         // Invisible ChatGPT run: open chatgpt.com in a BACKGROUND tab (active:false) with the flag the
         // content script checks on load. It captures, analyzes in a throwaway conversation, deletes
         // it, and imports — the user never sees a chat.
         // NOTE: do NOT arm() here — that watchdog is Claude-specific (it looks for a claude.ai tab)
         // and would falsely fail this ChatGPT run after 60s. The autorun reports its own done/error.
-        chrome.storage.local.set({ 'aibadges:cg:autorun': 1, 'aibadges:status': 'running', 'aibadges:progress': null });
+        chrome.storage.local.set({ 'aibadges:cg:autorun': 1, 'aibadges:cg:running': 1, 'aibadges:status': 'running', 'aibadges:progress': null });
         blink = true; running(); chrome.tabs.create({ url: 'https://chatgpt.com/', active: false }); break;
       case 'aibadges:cg-autorun-done':
         // The invisible worker tab (the sender) finished: close it and surface the fresh profile.
         disarm();
         if (sender.tab?.id != null) chrome.tabs.remove(sender.tab.id).catch(() => { /* already gone */ });
-        chrome.storage.local.set({ 'aibadges:status': 'done', 'aibadges:progress': null }); done();
+        chrome.storage.local.set({ 'aibadges:status': 'done', 'aibadges:progress': null, 'aibadges:cg:running': 0 }); done();
         chrome.tabs.create({ url: chrome.runtime.getURL('results.html') }); break;
       case 'aibadges:cg-autorun-error':
         disarm();
         if (sender.tab?.id != null) chrome.tabs.remove(sender.tab.id).catch(() => { /* already gone */ });
-        chrome.storage.local.set({ 'aibadges:status': 'error', 'aibadges:error': String(msg.error ?? '') }); error(); break;
+        chrome.storage.local.set({ 'aibadges:status': 'error', 'aibadges:error': String(msg.error ?? ''), 'aibadges:cg:running': 0 }); error(); break;
     }
   });
 });
