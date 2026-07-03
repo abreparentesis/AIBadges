@@ -72,13 +72,15 @@ export default defineContentScript({
     // by the flag so a normal chatgpt.com visit never triggers it. On finish/fail we tell the service
     // worker, which closes this tab and opens the results.
     const flag = (await chrome.storage.local.get('aibadges:cg:autorun'))['aibadges:cg:autorun'];
+    console.log('[aibadges:autorun] content script loaded; autorun flag =', !!flag, '; url =', location.href);
     if (flag) {
       await chrome.storage.local.remove('aibadges:cg:autorun');
       running = true;
       notify({ type: 'aibadges:cg-start' });
       runAutoProfile(notify)
+        .then(() => console.log('[aibadges:autorun] finished OK'))
         .catch((e) => {
-          console.error('[aibadges] chatgpt autorun failed', e);
+          console.error('[aibadges:autorun] FAILED', e);
           notify({ type: 'aibadges:cg-autorun-error', error: String(e?.message ?? e) });
         })
         .finally(() => { running = false; });
