@@ -1,9 +1,12 @@
 import { importGptReply } from '../run/import-chatgpt';
 
-// In-page bridge: prefill the ChatGPT composer with the AIBadges prompt+data, let the USER press
-// send (we never auto-submit, so we never touch the sentinel/Turnstile path), then read the finished
-// reply from the DOM and import it. All DOM coupling lives here; selectors are deliberately
-// multi-fallback because ChatGPT's UI changes, and any miss degrades to the manual paste flow.
+// In-page bridge: prefill the ChatGPT composer with the AIBadges prompt+data, submit it, then read
+// the finished reply from the DOM and import it. Submit is automatic: we click ChatGPT's own send
+// button, so ChatGPT's frontend computes the sentinel/Turnstile token and issues the request from the
+// user's own logged-in session (a scripted click still fires ChatGPT's send handler). If a challenge
+// is showing or the click never takes, we fall back to asking the user to press Enter. All DOM
+// coupling lives here; selectors are multi-fallback because ChatGPT's UI changes, and any miss
+// degrades to the manual paste flow.
 
 type Notify = (m: Record<string, unknown>) => void;
 
@@ -16,12 +19,24 @@ const COMPOSER_SELECTORS = [
   'textarea',
 ];
 const STOP_SELECTORS = ['[data-testid="stop-button"]', 'button[aria-label*="Stop"]', 'button[data-testid="composer-stop-button"]'];
+const SEND_SELECTORS = ['#composer-submit-button', 'button[data-testid="send-button"]', 'button[aria-label="Send prompt"]', 'button[aria-label*="Send"]', 'main form button[type="submit"]'];
+const CHALLENGE_SELECTORS = ['iframe[src*="challenges.cloudflare.com"]', '[id*="turnstile"]', '[class*="turnstile"]'];
 
 function q1(selectors: string[]): HTMLElement | null {
   for (const s of selectors) { const el = document.querySelector(s); if (el) return el as HTMLElement; }
   return null;
 }
 function isGenerating(): boolean { return !!q1(STOP_SELECTORS); }
+function hasChallenge(): boolean { return !!q1(CHALLENGE_SELECTORS); }
+// Click ChatGPT's own send button. A scripted click still fires their React send handler, and their
+// frontend attaches the sentinel/Turnstile token — we never compute it. Returns false if the button
+// is missing or still disabled (composer not yet registered), so the caller can retry or fall back.
+function clickSend(): boolean {
+  const el = q1(SEND_SELECTORS) as HTMLButtonElement | null;
+  if (!el || el.disabled) return false;
+  el.click();
+  return true;
+}
 function assistantTurns(): HTMLElement[] {
   return Array.from(document.querySelectorAll('[data-message-author-role="assistant"]')) as HTMLElement[];
 }
@@ -114,14 +129,19 @@ export function runBridge(prompt: string, notify: Notify): void {
   };
 
   const startWatching = () => {
-    showHint('AIBadges filled your message. Review it, then press Enter to run. We will read the result automatically.');
-
     const baseline = assistantTurns().length;
     const startedAt = Date.now();
     let lastText = '';
     let stableSince = 0;
     let everGenerated = false;
     let done = false;
+    let manualShown = false;
+    let autoSubmittedAt = 0;
+    const showManual = () => {
+      if (manualShown) return;
+      manualShown = true;
+      showHint('AIBadges filled your message. Review it, then press Enter to run. We will read the result automatically.');
+    };
 
     const stop = () => { obs.disconnect(); window.clearInterval(poll); };
     const importNow = async () => {
@@ -150,9 +170,17 @@ export function runBridge(prompt: string, notify: Notify): void {
       if (generating) everGenerated = true;
       const text = lastAssistantText();
       if (text && text !== lastText) { lastText = text; stableSince = Date.now(); }
+      const hasNewTurn = assistantTurns().length > baseline;
+
+      // Auto-submit didn't take (a challenge is showing, or 8s passed with no generation and no new
+      // turn): hand off to the user by asking them to press Enter. The watcher keeps running.
+      if (autoSubmittedAt && !manualShown && !everGenerated && !hasNewTurn &&
+          (hasChallenge() || Date.now() - autoSubmittedAt > 8000)) {
+        showManual();
+      }
 
       const decision = watcherDecision({
-        hasNewTurn: assistantTurns().length > baseline,
+        hasNewTurn,
         generating, everGenerated, hasText: !!text,
         textStableMs: stableSince ? Date.now() - stableSince : 0,
         elapsedMs: Date.now() - startedAt,
@@ -165,6 +193,18 @@ export function runBridge(prompt: string, notify: Notify): void {
     const obs = new MutationObserver(check);
     obs.observe(document.body, { childList: true, subtree: true, characterData: true });
     const poll = window.setInterval(check, 800);
+
+    // Auto-submit by clicking ChatGPT's own send button, retrying briefly while React enables it.
+    // A visible challenge means we must not auto-submit; ask the user to press Enter instead.
+    let sendTries = 0;
+    const trySubmit = () => {
+      if (done) return;
+      if (hasChallenge()) { showManual(); return; }
+      if (clickSend()) { autoSubmittedAt = Date.now(); showHint('AIBadges is running your analysis in ChatGPT…'); return; }
+      if (++sendTries > 8) { showManual(); return; } // ~2.4s of retrying, then hand off to the user
+      window.setTimeout(trySubmit, 300);
+    };
+    trySubmit();
   };
 
   tryFill();

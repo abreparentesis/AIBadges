@@ -4,11 +4,13 @@ import { buildChatGptExport } from '../src/capture/chatgpt-export';
 import { runBridge } from '../src/capture/chatgpt-bridge';
 import type { RawConversation } from '../src/capture/types';
 
-// ChatGPT path on chatgpt.com does two read-only jobs: (1) capture the user's history via the
-// session cookies, and (2) the "bridge" — prefill the composer with the prompt+data so the user can
-// press send, then read the finished reply from the DOM and import it. The extension never calls the
-// bot-gated completion endpoint or auto-submits; the user always presses send. Distinct message
-// namespace ('aibadges:cg-*') so it never touches the Claude run state machine.
+// ChatGPT path on chatgpt.com does two jobs: (1) capture the user's history via the session cookies
+// (read-only), and (2) the "bridge": prefill the composer with the prompt+data and auto-submit by
+// clicking ChatGPT's own send button, then read the finished reply from the DOM and import it. We
+// never call the bot-gated completion endpoint directly and never compute a sentinel/Turnstile token;
+// ChatGPT's own frontend issues the request from the user's session when its send button is clicked.
+// If a challenge shows or the click doesn't take, it falls back to the user pressing Enter. Distinct
+// message namespace ('aibadges:cg-*') so it never touches the Claude run state machine.
 const MAX_CONVOS = 30;
 const PER_CONVO_CHARS = 4000;
 const CAPTURE_KEY = 'aibadges:chatgpt:capture';

@@ -128,8 +128,8 @@ export default function App() {
             </div>
             <p className="bb-muted" style={{ margin: '0 0 14px', lineHeight: 1.55 }}>
               Captured <b style={{ color: t.g900 }}>{convoCount} conversations</b> (~{sizeK}k characters). We'll open
-              ChatGPT and drop the prompt into the message box. You review it and press send; we read the result and
-              build your profile automatically. No copy-paste.
+              ChatGPT, run the analysis in your own session, read the result, and build your profile automatically.
+              No copy-paste, no sending anything yourself.
             </p>
 
             {bridge === 'idle' && (
@@ -139,9 +139,9 @@ export default function App() {
             {bridge === 'watching' && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 13.5, color: '#0b4a6f',
                 background: t.blue50, border: `1px solid ${t.blue100}`, borderRadius: 10, padding: '10px 12px' }}>
-                <span>👉</span>
-                <span>Switch to the ChatGPT tab, review the message, and press <b>Enter</b>. We'll grab the result and
-                  open your profile here automatically — keep that tab open until it finishes.</span>
+                <span>⏳</span>
+                <span>Running your analysis in the ChatGPT tab. We'll open your profile here automatically when it's
+                  done. Keep that tab open, and if ChatGPT asks you to confirm, press <b>Enter</b> in that tab.</span>
               </div>
             )}
             {bridge === 'done' && (
