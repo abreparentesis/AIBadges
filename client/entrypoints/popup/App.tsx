@@ -200,7 +200,7 @@ function ClaudePanel() {
 // ---------------------------------------------------------------------------
 // ChatGPT: capture-only, then hand off to the GPT page (no auto-start; capture on click).
 
-type CgMode = 'idle' | 'needchatgpt' | 'capturing' | 'captured' | 'error';
+type CgMode = 'idle' | 'capturing' | 'error';
 const CAPTURE_KEY = 'aibadges:chatgpt:capture';
 
 async function findChatGptTab(): Promise<number | null> { return firstTabId(['https://chatgpt.com/*', 'https://chat.openai.com/*']); }
@@ -223,8 +223,6 @@ async function startCapture(): Promise<boolean> {
   try { await chrome.scripting.executeScript({ target: { tabId: id }, files: ['content-scripts/chatgpt-capture.js'] }); } catch { return false; }
   return await send();
 }
-function openHandoff() { chrome.tabs.create({ url: chrome.runtime.getURL('chatgpt.html') }); window.close(); }
-
 function ChatGptPanel() {
   const [mode, setMode] = useState<CgMode>('idle');
   const [prog, setProg] = useState<{ done: number; total: number; phase?: string } | null>(null);
@@ -233,12 +231,11 @@ function ChatGptPanel() {
 
   useEffect(() => {
     (async () => {
-      const r = await chrome.storage.local.get(['aibadges:status', CAPTURE_KEY]);
+      const r = await chrome.storage.local.get('aibadges:status');
       setHasProfile(r['aibadges:status'] === 'done');
-      // Reattach to an in-flight capture if the popup was reopened mid-run; else if a bundle is
-      // already stored, jump to the handoff step; otherwise idle.
+      // Reattach to an in-flight run if the popup was reopened mid-run; otherwise idle. A leftover
+      // capture bundle no longer routes anywhere — the invisible run captures fresh each time.
       if (await pingCaptureAlive()) setMode('capturing');
-      else if (r[CAPTURE_KEY]) setMode('captured');
     })();
     const onMsg = (m: any) => {
       if (m?.type === 'aibadges:cg-phase') setProg({ done: m.done, total: m.total, phase: m.phase });
@@ -284,23 +281,8 @@ function ChatGptPanel() {
           <div style={{ height: 8, background: t.g100, borderRadius: 50, overflow: 'hidden' }}>
             <div className="bb-bar-fill" style={{ height: '100%', width: `${Math.max(3, Math.min(100, p))}%`, background: t.purple, borderRadius: 50, transition: 'width .4s ease' }} />
           </div>
-          <div style={{ fontSize: 12, color: t.g500, marginTop: 8 }}>Keep the chatgpt.com tab open. We’ll open the next step automatically.</div>
+          <div style={{ fontSize: 12, color: t.g500, marginTop: 8 }}>Runs in a background tab and opens your profile here automatically. You can switch tabs; nothing is added to your ChatGPT history.</div>
         </div>
-      )}
-
-      {mode === 'captured' && (
-        <div>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>History captured</div>
-          <div style={{ fontSize: 13, color: t.g600, marginBottom: 14, lineHeight: 1.5 }}>
-            Next: hand it to the AIBadges GPT and paste the result back.
-          </div>
-          <button className="bb-btn bb-btn-primary" style={{ width: '100%', marginBottom: 8 }} onClick={openHandoff}>Continue to the GPT step →</button>
-          <button className="bb-btn bb-btn-secondary" style={{ width: '100%' }} onClick={capture}>Re-capture</button>
-        </div>
-      )}
-
-      {mode === 'needchatgpt' && (
-        <Row dot={t.g300}>Open <b>chatgpt.com</b> (signed in) in a tab, then click the icon again to capture.</Row>
       )}
 
       {mode === 'error' && (
