@@ -2,15 +2,18 @@ import { ChatGPTCaptureAdapter } from '../src/capture/chatgpt';
 import { selectAcrossTimeline } from '../src/capture/select';
 import { buildChatGptExport } from '../src/capture/chatgpt-export';
 import { runBridge } from '../src/capture/chatgpt-bridge';
+import { runAutoProfile } from '../src/capture/chatgpt-autorun';
 import type { RawConversation } from '../src/capture/types';
 
-// ChatGPT path on chatgpt.com does two jobs: (1) capture the user's history via the session cookies
-// (read-only), and (2) the "bridge": prefill the composer with the prompt+data and auto-submit by
-// clicking ChatGPT's own send button, then read the finished reply from the DOM and import it. We
-// never call the bot-gated completion endpoint directly and never compute a sentinel/Turnstile token;
-// ChatGPT's own frontend issues the request from the user's session when its send button is clicked.
-// If a challenge shows or the click doesn't take, it falls back to the user pressing Enter. Distinct
-// message namespace ('aibadges:cg-*') so it never touches the Claude run state machine.
+// ChatGPT path on chatgpt.com. Default flow is INVISIBLE: the service worker opens this page in a
+// background tab with the 'aibadges:cg:autorun' flag set, and runAutoProfile() captures history, runs
+// the analysis in a throwaway conversation, reads the reply from the API (works while the tab is
+// hidden), deletes the conversation, and imports. Nothing is left in the user's ChatGPT history.
+// Legacy visible paths remain for compatibility: 'aibadges:cg-capture' (capture only) and
+// 'aibadges:cg-bridge' (prefill + auto-submit, manual-Enter fallback). We never call the bot-gated
+// completion endpoint directly and never compute a sentinel/Turnstile token; ChatGPT's own frontend
+// issues the request when its send button is clicked. Distinct 'aibadges:cg-*' message namespace so
+// it never touches the Claude run state machine.
 const MAX_CONVOS = 30;
 const PER_CONVO_CHARS = 4000;
 const CAPTURE_KEY = 'aibadges:chatgpt:capture';
@@ -64,5 +67,21 @@ export default defineContentScript({
 
       return false;
     });
+
+    // Invisible run: the service worker opened this (background) tab with the autorun flag set. Gated
+    // by the flag so a normal chatgpt.com visit never triggers it. On finish/fail we tell the service
+    // worker, which closes this tab and opens the results.
+    const flag = (await chrome.storage.local.get('aibadges:cg:autorun'))['aibadges:cg:autorun'];
+    if (flag) {
+      await chrome.storage.local.remove('aibadges:cg:autorun');
+      running = true;
+      notify({ type: 'aibadges:cg-start' });
+      runAutoProfile(notify)
+        .catch((e) => {
+          console.error('[aibadges] chatgpt autorun failed', e);
+          notify({ type: 'aibadges:cg-autorun-error', error: String(e?.message ?? e) });
+        })
+        .finally(() => { running = false; });
+    }
   },
 });

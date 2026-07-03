@@ -27,11 +27,11 @@ function q1(selectors: string[]): HTMLElement | null {
   return null;
 }
 function isGenerating(): boolean { return !!q1(STOP_SELECTORS); }
-function hasChallenge(): boolean { return !!q1(CHALLENGE_SELECTORS); }
+export function hasChallenge(): boolean { return !!q1(CHALLENGE_SELECTORS); }
 // Click ChatGPT's own send button. A scripted click still fires their React send handler, and their
 // frontend attaches the sentinel/Turnstile token — we never compute it. Returns false if the button
 // is missing or still disabled (composer not yet registered), so the caller can retry or fall back.
-function clickSend(): boolean {
+export function clickSend(): boolean {
   const el = q1(SEND_SELECTORS) as HTMLButtonElement | null;
   if (!el || el.disabled) return false;
   el.click();
@@ -74,7 +74,7 @@ export function watcherDecision(
 
 // React/ProseMirror-controlled composer: a naive `el.value = x` is ignored, so use the native value
 // setter + an input event for <textarea>, or execCommand('insertText') for the contenteditable.
-function setComposer(text: string): boolean {
+export function setComposer(text: string): boolean {
   const el = q1(COMPOSER_SELECTORS);
   if (!el) return false;
   el.focus();

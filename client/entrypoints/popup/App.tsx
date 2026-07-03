@@ -227,7 +227,7 @@ function openHandoff() { chrome.tabs.create({ url: chrome.runtime.getURL('chatgp
 
 function ChatGptPanel() {
   const [mode, setMode] = useState<CgMode>('idle');
-  const [prog, setProg] = useState<{ done: number; total: number } | null>(null);
+  const [prog, setProg] = useState<{ done: number; total: number; phase?: string } | null>(null);
   const [hasProfile, setHasProfile] = useState(false);
   const [err, setErr] = useState('');
 
@@ -241,10 +241,10 @@ function ChatGptPanel() {
       else if (r[CAPTURE_KEY]) setMode('captured');
     })();
     const onMsg = (m: any) => {
-      if (m?.type === 'aibadges:cg-phase') setProg({ done: m.done, total: m.total });
+      if (m?.type === 'aibadges:cg-phase') setProg({ done: m.done, total: m.total, phase: m.phase });
       else if (m?.type === 'aibadges:cg-start') { setProg(null); setMode('capturing'); }
-      else if (m?.type === 'aibadges:cg-done') openHandoff();
-      else if (m?.type === 'aibadges:cg-error') { setErr(String(m.error || '')); setMode('error'); }
+      else if (m?.type === 'aibadges:cg-autorun-done') { setHasProfile(true); setMode('idle'); }
+      else if (m?.type === 'aibadges:cg-autorun-error' || m?.type === 'aibadges:cg-error') { setErr(String(m.error || '')); setMode('error'); }
     };
     chrome.runtime.onMessage.addListener(onMsg);
     return () => chrome.runtime.onMessage.removeListener(onMsg);
@@ -252,8 +252,9 @@ function ChatGptPanel() {
 
   async function capture() {
     setErr(''); setProg(null); setMode('capturing');
-    const ok = await startCapture();
-    if (!ok) setMode('needchatgpt');
+    // Fire-and-forget to the service worker: it opens chatgpt.com in a background tab and runs the
+    // whole thing invisibly (capture, analyze in a throwaway conversation, delete, import).
+    chrome.runtime.sendMessage({ type: 'aibadges:cg-autorun' });
   }
 
   const p = prog && prog.total ? Math.round((prog.done / prog.total) * 100) : 4;
@@ -270,16 +271,16 @@ function ChatGptPanel() {
         <div>
           <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Profile from ChatGPT</div>
           <div style={{ fontSize: 13, color: t.g600, marginBottom: 14, lineHeight: 1.5 }}>
-            We capture your ChatGPT history here, then your own ChatGPT analyzes it. Your chats are never sent to our servers.
+            Runs in the background using your own ChatGPT session. Nothing is added to your chat history, and your chats are never sent to our servers.
           </div>
-          <button className="bb-btn bb-btn-primary" style={{ width: '100%' }} onClick={capture}>Capture my ChatGPT history</button>
+          <button className="bb-btn bb-btn-primary" style={{ width: '100%' }} onClick={capture}>Profile my ChatGPT</button>
         </div>
       )}
 
       {mode === 'capturing' && (
         <div>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Reading your ChatGPT history…</div>
-          <div style={{ fontSize: 13, color: t.g600, marginBottom: 12 }}>{prog ? `${prog.done} / ${prog.total} conversations` : 'Starting…'}</div>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>{prog?.phase === 'analysis' ? 'Analyzing in your ChatGPT…' : 'Reading your ChatGPT history…'}</div>
+          <div style={{ fontSize: 13, color: t.g600, marginBottom: 12 }}>{prog?.phase === 'analysis' ? 'Running in a background tab, cleans up after itself.' : (prog ? `${prog.done} / ${prog.total} conversations` : 'Starting…')}</div>
           <div style={{ height: 8, background: t.g100, borderRadius: 50, overflow: 'hidden' }}>
             <div className="bb-bar-fill" style={{ height: '100%', width: `${Math.max(3, Math.min(100, p))}%`, background: t.purple, borderRadius: 50, transition: 'width .4s ease' }} />
           </div>
