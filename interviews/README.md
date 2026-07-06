@@ -53,28 +53,27 @@ phase run --app-id 075a8ab8-78d4-4f75-9fdd-a94ba7d1712e --env Development --path
 5. **Reports** — per-segment synthesis and the final report. Numbers come from the rules
    engine; the LLM only drafts prose, and a post-check flags any altered number.
 
-## Deploy (Hetzner)
+## Deploy (Hetzner) — LIVE
+
+Deployed 2026-07-06 at **https://interviews.mindmaterial.io** on the `hetzner-billions`
+host, following the same pattern as `aibadges-backend`: docker compose in
+`/opt/aibadges-interviews/` (container bound to `127.0.0.1:4620`), native Caddy terminating
+TLS, secrets in `/opt/aibadges-interviews/.env` (mode 600: `APP_USER`, `APP_PASS`,
+`NVIDIA_API_KEY`). DNS is a grey-cloud A record on Cloudflare.
+
+Redeploy after a change:
 
 ```bash
-# on the server
-sudo mkdir -p /opt/aibadges/interviews /opt/aibadges/interviews-data /etc/aibadges
-rsync -a --exclude node_modules --exclude data ./interviews/ hetzner:/opt/aibadges/interviews/
-ssh hetzner 'cd /opt/aibadges/interviews && bun install --production && bun run build'
-printf 'APP_USER=sebastian\nAPP_PASS=<strong password>\n' | ssh hetzner 'sudo tee /etc/aibadges/interviews.env && sudo chmod 600 /etc/aibadges/interviews.env'
-ssh hetzner 'sudo cp /opt/aibadges/interviews/deploy/interview-app.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now interview-app'
+rsync -az --exclude node_modules/ --exclude data/ --exclude ui/dist/ --exclude .env \
+  interviews/ hetzner-billions:/opt/aibadges-interviews/
+ssh hetzner-billions 'cd /opt/aibadges-interviews && docker compose up -d --build'
+curl -u sebastian:$APP_PASS https://interviews.mindmaterial.io/api/health   # {ok:true}
 ```
 
-Reverse proxy (Caddy):
-
-```
-interviews.<domain> {
-    reverse_proxy 127.0.0.1:4620
-}
-```
-
-Basic auth is enforced by the app itself (`APP_USER`/`APP_PASS`), so the proxy stays a
-plain pass-through. Backups: install `deploy/backup.sh` as a nightly cron; restore =
-copy a `.db` snapshot over `DATA_DIR/interviews.db` and restart.
+Basic auth is enforced by the app itself, so the Caddy block stays a plain pass-through.
+Backups: `deploy/backup.sh` as a nightly cron; restore = copy a `.db` snapshot over
+`data/interviews.db` and restart. (`deploy/interview-app.service` is the non-docker
+systemd alternative; not what is running.)
 
 ## Notes
 
