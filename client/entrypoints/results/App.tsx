@@ -5,6 +5,7 @@ import { lookupType } from '../../src/engine/typeTable';
 import { ensureUserKey } from '../../src/store/userkey';
 import { BackendSync, NEEDS_REPUSH_KEY, repushIfNeeded } from '../../src/sync/backend';
 import { BACKEND_URL, INVITE_TOKEN, shareUrl } from '../../src/config';
+import { buildAddToProfileUrl, buildShareOnLinkedInUrl, stageDrift } from '../../src/sync/linkedin';
 import { namedLevel } from '../../src/engine/levels';
 import { learningPath } from '../../src/engine/learningPath';
 import { t, bandColor } from '../../src/ui/tokens';
@@ -34,6 +35,7 @@ export default function App() {
   const [signals, setSignals] = useState<UiSignal[]>([]);
   const [busy, setBusy] = useState('');
   const [tab, setTab] = useState<Tab>('personality');
+  const [publishedStage, setPublishedStage] = useState('');
 
   // Index the verified quotes once per profile, then resolve claim/axis/shift ids → quotes.
   // Old profiles may lack `evidence`; quotesFor then yields [] and no expander is rendered.
@@ -59,6 +61,7 @@ export default function App() {
         ({ ...sig, disclosure: (sig.disclosure === 'private' ? 'private' : 'public') as Signal['disclosure'] }));
       setSignals(parsed);
     }
+    setPublishedStage((await kv.get('aibadges:publishedStage')) ?? '');
   }
   useEffect(() => {
     void load();
@@ -78,6 +81,8 @@ export default function App() {
       setSignals(next);
       await kv.set('aibadges:signals', JSON.stringify(next));
       await kv.set(NEEDS_REPUSH_KEY, '1'); // the next share must re-push the profile first
+      setPublishedStage('');
+      await kv.set('aibadges:publishedStage', '');
       alert('Deleted. Our server no longer holds any data for you.');
     } catch (e) { alert('Delete failed: ' + String(e)); } finally { setBusy(''); }
   }
@@ -96,7 +101,40 @@ export default function App() {
       const next = signals.map((s) => (s.type === sig.type ? { ...s, disclosure, shareToken: res?.shareToken ?? null } : s));
       setSignals(next);
       await kv.set('aibadges:signals', JSON.stringify(next));
+      if (sig.type === 'statBadge') {
+        const stage = disclosure === 'public'
+          ? String((sig.surfacedContent as { yeggeStage?: number | string }).yeggeStage ?? '') : '';
+        setPublishedStage(stage);
+        await kv.set('aibadges:publishedStage', stage);
+      }
     } catch (e) { alert('Share update failed: ' + String(e)); } finally { setBusy(''); }
+  }
+
+  // Explicit refresh: pushes the CURRENT local statBadge content (kv signals are re-distilled
+  // after every run) so the share page and og image match, then reopens LinkedIn's form.
+  async function updateLinkedInBadge() {
+    if (busy) return;
+    const sig = sigFor('statBadge');
+    if (!sig?.shareToken) return;
+    setBusy('statBadge');
+    try {
+      const userKey = await ensureUserKey(kv);
+      const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
+      await repushIfNeeded(kv, sync);
+      const [res] = await sync.setSignals([{ type: 'statBadge', surfacedContent: sig.surfacedContent, disclosure: 'public' }]);
+      const next = signals.map((s) => (s.type === 'statBadge' ? { ...s, disclosure: 'public' as Signal['disclosure'], shareToken: res?.shareToken ?? null } : s));
+      setSignals(next);
+      await kv.set('aibadges:signals', JSON.stringify(next));
+      const stage = String((sig.surfacedContent as { yeggeStage?: number | string }).yeggeStage ?? '');
+      setPublishedStage(stage);
+      await kv.set('aibadges:publishedStage', stage);
+      if (res?.shareToken && profile) {
+        window.open(buildAddToProfileUrl({
+          stage, computedAt: profile.computedAt,
+          shareUrl: shareUrl(res.shareToken), token: res.shareToken,
+        }), '_blank');
+      }
+    } catch (e) { alert('Badge update failed: ' + String(e)); } finally { setBusy(''); }
   }
 
   if (!profile) {
@@ -280,6 +318,38 @@ export default function App() {
                 <Toggle label="AI literacy" pub={isPublic('statBadge')} busy={busy === 'statBadge'}
                   onChange={(next) => toggle('statBadge', next)} />
               )} />
+            {(() => {
+              const sig = sigFor('statBadge');
+              if (!sig || sig.disclosure !== 'public' || !sig.shareToken) return null;
+              const link = shareUrl(sig.shareToken);
+              const drift = stageDrift(publishedStage, cap.yeggeStage.stage);
+              return (
+                <div style={{ margin: '0 0 16px' }}>
+                  {drift && (
+                    <div className="bb-card" style={{ marginBottom: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderLeft: `4px solid ${t.blue}` }}>
+                      <span style={{ fontSize: 13 }}>
+                        Your LinkedIn badge says Stage {publishedStage} &mdash; you&rsquo;re now at Stage {cap.yeggeStage.stage}.
+                      </span>
+                      <button type="button" className="bb-btn" onClick={() => void updateLinkedInBadge()} disabled={busy !== ''}
+                        style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', borderRadius: 50, padding: '5px 14px', border: `1px solid ${t.g300}`, background: t.white }}>
+                        Update LinkedIn badge
+                      </button>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <a href={buildAddToProfileUrl({ stage: cap.yeggeStage.stage, computedAt: profile.computedAt, shareUrl: link, token: sig.shareToken })}
+                      target="_blank" rel="noreferrer"
+                      style={{ fontSize: 13, fontWeight: 600, textDecoration: 'none', borderRadius: 50, padding: '7px 16px', background: '#0A66C2', color: '#fff' }}>
+                      Add to LinkedIn profile
+                    </a>
+                    <a href={buildShareOnLinkedInUrl(link)} target="_blank" rel="noreferrer"
+                      style={{ fontSize: 13, fontWeight: 600, textDecoration: 'none', borderRadius: 50, padding: '7px 16px', border: `1px solid ${t.g300}`, color: t.g700 }}>
+                      Share on LinkedIn
+                    </a>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="bb-grid2">
               {FLUENCY.map(([key, label, desc, weak]) => {
                 const band = cap.aiFluency[key].band;
