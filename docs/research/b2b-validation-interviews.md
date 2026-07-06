@@ -60,7 +60,7 @@ interviews are uniformly negative on its owning hypothesis.
   companies measure AI adoption ("20 minutes, I'm researching how companies like yours track
   whether AI investment is working, not selling anything").
 
-## 3. Interview structure (40 to 45 minutes)
+## 3. Interview structure (45 to 50 minutes)
 
 Same skeleton for all profiles; only the middle block changes.
 
@@ -70,8 +70,9 @@ Same skeleton for all profiles; only the middle block changes.
    "happy to show you at the end, I don't want to bias what you tell me."
 3. **Alternatives and spend (10 min).** What they use today to answer these questions, what
    it costs, what they tried and abandoned.
-4. **Concept reaction (5 to 10 min, only now).** One-paragraph pitch, then the privacy probe
-   and the commitment ask.
+4. **Concept reaction (10 to 15 min, only now).** One-paragraph pitch, then the privacy,
+   participation, and buyer probes, and the commitment ask. This block carries the most
+   decision-critical codes; do not let it get squeezed by an overrunning step 2.
 5. **Close (2 min).** Referral ask: "who else thinks about this at your company or elsewhere?"
 
 ## 4. Question bank
@@ -136,7 +137,7 @@ that itself is a finding: the pain may not exist yet.
   possible signal: they already paid engineers to build a worse version), per-person vs
   team-level appetite.
 
-### Concept reaction block (all profiles, final 10 minutes only)
+### Concept reaction block (all profiles, final 10 to 15 minutes only)
 
 Pitch the value only, without the privacy architecture (mentioning it up front pre-frames
 the privacy question and manufactures false acceptance): "We turn each employee's own AI
@@ -146,6 +147,9 @@ a view of which seats are underused or redundant."
 
 Then:
 - "What's your first reaction?" (Let them talk. Note whether they go to value or to risk.)
+- "What would you do with the maturity dashboard in the first month? Which decision does it
+  feed?" (Ask this before the participation probe; its answer is the "decision you named"
+  that the probe refers back to.)
 - Privacy probe (H4), in two steps so the architecture doesn't lead the witness:
   1. Neutral frame first: "This means your company gets a per-employee profile derived from
      each person's chat history. Who at your company would have to say yes, and what would
@@ -160,8 +164,9 @@ Then:
   your team would actually do it?" Then feed their own number back: "At that coverage, is
   the dashboard still useful for the decision you named?" (An aggregate view is worthless at
   low opt-in; this assumption dies here or in production. Code PARTIC on the pair.)
-- "What would you do with the maturity dashboard in the first month? Which decision does it
-  feed?"
+- Buyer question (H5): "If you decided to buy this, whose budget would it come from, and who
+  else would have to sign off?" Code BUYER on the answer; the cross-segment kill hinges on
+  it, so do not let it go unasked.
 - Commitment ask, escalating: "Can I come back in 6 weeks and show you a prototype on your
   own data?" then "Would you run a paid pilot with one team?" then "Who else should I talk
   to?" Record exactly which rung they accept. Time, reputation (intros), or money are real;
@@ -192,8 +197,9 @@ Tag each transcript within 24 hours of the interview with:
 - `PARTIC-<low|mixed|high>` — participation-probe verdict: their opt-in estimate combined
   with whether that coverage still feeds the decision they named. low = coverage below what
   they themselves called useful.
-- `COMMIT-<0..3>` — 0 nothing, 1 referral given, 2 agreed to prototype session, 3 agreed to
-  discuss a paid pilot.
+- `COMMIT-<0..3>` — 0 nothing, 1 referral given, 2 agreed to a prototype session or to
+  discuss a pilot, 3 agreed to run or scope a paid pilot with a named team. (Agreeing to a
+  conversation costs them nothing; only a yes to running a pilot is a money signal.)
 
 ### Signal discipline
 Strong evidence: specific past events, money already spent, artifacts they show you,
@@ -215,12 +221,14 @@ so a segment stopped early at 5 is judged by the same bar as one that ran 8.
   more interviews before building.
 - **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, ≥40% show
   existing SPEND, a consistent BUYER emerges, ≥40% reach COMMIT-2+ with at least one
-  COMMIT-3 (a prototype-session yes is curiosity; only a paid-pilot conversation tests
-  budget and authority), and PARTIC is not mostly low (a dashboard below the coverage they
-  themselves called useful decides nothing).
-- **Hold** any segment matching none of the above — typically real pain with thin spend or
-  commitment evidence. That is a no-build verdict for now; revisit only if something
-  material changes, don't keep interviewing hoping for a different answer.
+  COMMIT-3 (a prototype-session yes is curiosity; only an agreement to run a paid pilot
+  tests budget and authority), and PARTIC is not mostly low (a dashboard below the coverage
+  they themselves called useful decides nothing).
+- **Hold** any segment matching none of the above — typically real pain with thin spend
+  evidence. (Real pain with zero commitments is a Kill, not a Hold: talk without any
+  commitment means they don't care enough.) Hold is a no-build verdict for now; revisit
+  only if something material changes, don't keep interviewing hoping for a different
+  answer.
 - **Cross-segment kill (H5):** if no segment surfaces a consistent single buyer with budget
   authority — every interview points at a triangle ("HR wants it, IT pays") — kill or
   rescope the B2B angle regardless of pain and spend scores.
