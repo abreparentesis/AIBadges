@@ -11,17 +11,13 @@ import {
   SCREENERS,
   STAGES,
 } from "../engine/kit";
-import {
-  crossSegmentKill,
-  evaluateSegment,
-  rankSegments,
-  type SegmentVerdict,
-} from "../engine/rules";
 import type { Profile } from "../engine/types";
 import { ParseError, parseTranscript } from "../ingest/parse";
 import { codeTranscript } from "../llm/coder";
 import type { LlmClient } from "../llm/client";
+import { buildFacts, draftSynthesis, finalReport } from "../reports/synthesis";
 import type { Store } from "../store/db";
+import { PROFILES, segmentVerdicts } from "./segments";
 
 export type JobState = "running" | "done" | "error";
 
@@ -29,35 +25,6 @@ export interface ApiDeps {
   store: Store;
   dataDir: string;
   llm: LlmClient;
-}
-
-const PROFILES: Profile[] = ["A", "B", "C"];
-
-export function segmentVerdicts(store: Store): {
-  perProfile: Record<Profile, SegmentVerdict & { label: string; counts: Record<string, number> }>;
-  crossSegmentKill: boolean;
-  ranking: Profile[];
-} {
-  const verdicts = new Map<Profile, SegmentVerdict>();
-  const avgPain = new Map<Profile, number>();
-  const out: any = {};
-  for (const profile of PROFILES) {
-    const interviews = store.interviewsByProfile(profile);
-    const reviewed = interviews.filter((i) => i.status === "reviewed");
-    const coded = reviewed.map((i) => toCodedInterview(i.id, store.effectiveCodes(i.id)));
-    const verdict = evaluateSegment(coded);
-    verdicts.set(profile, verdict);
-    const pains = coded.map((c) => c.pain ?? 0);
-    avgPain.set(profile, pains.length ? pains.reduce((a, b) => a + b, 0) / pains.length : 0);
-    const counts: Record<string, number> = {};
-    for (const i of interviews) counts[i.status] = (counts[i.status] ?? 0) + 1;
-    out[profile] = { ...verdict, label: PROFILE_LABELS[profile], counts };
-  }
-  return {
-    perProfile: out,
-    crossSegmentKill: crossSegmentKill([...verdicts.values()]),
-    ranking: rankSegments(verdicts, avgPain),
-  };
 }
 
 export function mountApi(app: Hono, deps: ApiDeps) {
@@ -220,4 +187,16 @@ export function mountApi(app: Hono, deps: ApiDeps) {
   });
 
   app.get("/api/segments", (c) => c.json(segmentVerdicts(store)));
+
+  app.get("/api/reports/segment/:profile", async (c) => {
+    const profile = c.req.param("profile") as Profile;
+    if (!PROFILES.includes(profile)) return c.json({ error: "profile must be A|B|C" }, 400);
+    const md = await draftSynthesis(buildFacts(profile, store), llm);
+    return c.text(md, 200, { "content-type": "text/markdown; charset=utf-8" });
+  });
+
+  app.get("/api/reports/final", async (c) => {
+    const md = await finalReport(store, llm);
+    return c.text(md, 200, { "content-type": "text/markdown; charset=utf-8" });
+  });
 }
