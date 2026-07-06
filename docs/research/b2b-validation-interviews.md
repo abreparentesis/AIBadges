@@ -150,15 +150,16 @@ Then:
   1. Neutral frame first: "This means your company gets a per-employee profile derived from
      each person's chat history. Who at your company would have to say yes, and what would
      they say?" Push for the actual gatekeepers (legal, works council, security, the
-     employees themselves). Code PRIV on this pre-reveal reaction.
+     employees themselves). Code PRIV-PRE on this reaction.
   2. Then reveal: "The analysis runs on the employee's side; raw conversations never leave
-     their session, only derived profiles do. Does that change anything?" Note whether the
-     architecture moves them (that delta is the evidence that the privacy model is a real
-     differentiator, not just tolerated).
-- Participation probe: "This needs each employee to run the analysis themselves, in their
-  own AI session. What fraction of your team would actually do it, and is a dashboard
-  covering, say, 40% of people still useful for the decision you named?" (An aggregate view
-  is worthless at low opt-in; this assumption dies here or in production.)
+     their session, only derived profiles do. Does that change anything?" Code PRIV-POST on
+     where they land now. The pre-to-post delta is the evidence that the privacy model is a
+     real differentiator, not just tolerated.
+- Participation probe, two turns so the second half doesn't get lost: first, "This needs
+  each employee to run the analysis themselves, in their own AI session. What fraction of
+  your team would actually do it?" Then feed their own number back: "At that coverage, is
+  the dashboard still useful for the decision you named?" (An aggregate view is worthless at
+  low opt-in; this assumption dies here or in production. Code PARTIC on the pair.)
 - "What would you do with the maturity dashboard in the first month? Which decision does it
   feed?"
 - Commitment ask, escalating: "Can I come back in 6 weeks and show you a prototype on your
@@ -171,17 +172,26 @@ Then:
 ### Coding
 Tag each transcript within 24 hours of the interview with:
 
-- `PAIN-<H1|H2|H3>` with severity 0 to 3. 3 = a named decision was blocked or a budget
-  exists; 2 = active workaround in place (spreadsheet, survey, internal tool); 1 = agrees
-  it's a problem when asked; 0 = no pain.
+- `PAIN-<H1|H2|H3>` with severity 0 to 3. For H1/H3: 3 = a named decision was blocked or a
+  budget exists; 2 = active workaround in place (spreadsheet, survey, internal tool); 1 =
+  agrees it's a problem when asked; 0 = no pain. For H2 anchor to magnitude and opacity
+  instead (a budget line always exists in finance, so "a budget exists" would auto-score 3):
+  3 = large AI spend with no utilization visibility and an attempted control effort; 2 =
+  spend tracked but renewal decisions made blind; 1 = agrees opacity exists; 0 = spend too
+  small to care.
 - `SPEND` — money already going to adjacent solutions (training platforms, SaaS-management
   tools, internal builds, consultant assessments), with amounts.
 - `ALT` — what they use today and its named gaps.
 - `BUYER` — who they say owns budget and decision. Watch for triangles ("HR would want it
   but IT pays") — those kill deals.
-- `PRIV-GREEN / PRIV-AMBER / PRIV-RED` — H4 reaction. RED = categorical block (works
-  council, legal, culture). AMBER = conditional (opt-in, anonymized aggregates only,
-  EU-hosting, no per-person view). GREEN = no meaningful objection.
+- `PRIV-PRE` and `PRIV-POST`, each GREEN/AMBER/RED — H4 reaction before and after the
+  privacy-architecture reveal. RED = categorical block (works council, legal, culture).
+  AMBER = conditional (opt-in, anonymized aggregates only, EU-hosting, no per-person view).
+  GREEN = no meaningful objection. Decision rules run on PRIV-POST; the pre-to-post delta
+  measures whether the architecture is a differentiator.
+- `PARTIC-<low|mixed|high>` — participation-probe verdict: their opt-in estimate combined
+  with whether that coverage still feeds the decision they named. low = coverage below what
+  they themselves called useful.
 - `COMMIT-<0..3>` — 0 nothing, 1 referral given, 2 agreed to prototype session, 3 agreed to
   discuss a paid pilot.
 
@@ -193,16 +203,24 @@ use that"), generic industry talk. Actively hunt disconfirming evidence in every
 care", "we'd just survey people".
 
 ### Decision rules (after 6 to 8 per segment)
-Evaluate in order — Kill first, then Pivot, then Proceed — so a segment can't match two
-rules at once:
-- **Kill the segment** if pain is mostly severity ≤1 or commitments are all COMMIT-0/1.
-- **Pivot** if pain is real (≥50% at severity ≥2) but PRIV-RED dominates (PRIV-RED in ≥50%
-  of that segment's interviews): redesign as employee-opt-in, aggregate-only, and re-test
-  with 4 more interviews before building.
-- **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, at least 3 show
-  existing SPEND, a consistent BUYER emerges, and ≥3 reach COMMIT-2+ of which at least one
-  is COMMIT-3 (a prototype-session yes is curiosity; only a paid-pilot conversation tests
-  budget and authority).
+Evaluate in order — Kill, then Pivot, then Proceed, then Hold — so every segment lands in
+exactly one bucket. All thresholds are proportions of that segment's completed interviews,
+so a segment stopped early at 5 is judged by the same bar as one that ran 8.
+- **Kill the segment** if pain is mostly severity ≤1, or commitments are all COMMIT-0/1
+  while PRIV-POST-RED is under 50%. (The privacy guard matters: privacy-blocked prospects
+  can't commit, so low commitment under dominant PRIV-RED is a symptom of the privacy block
+  and belongs to Pivot, not Kill.)
+- **Pivot** if pain is real (≥50% at severity ≥2) but PRIV-POST-RED covers ≥50% of the
+  segment's interviews: redesign as employee-opt-in, aggregate-only, and re-test with 4
+  more interviews before building.
+- **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, ≥40% show
+  existing SPEND, a consistent BUYER emerges, ≥40% reach COMMIT-2+ with at least one
+  COMMIT-3 (a prototype-session yes is curiosity; only a paid-pilot conversation tests
+  budget and authority), and PARTIC is not mostly low (a dashboard below the coverage they
+  themselves called useful decides nothing).
+- **Hold** any segment matching none of the above — typically real pain with thin spend or
+  commitment evidence. That is a no-build verdict for now; revisit only if something
+  material changes, don't keep interviewing hoping for a different answer.
 - **Cross-segment kill (H5):** if no segment surfaces a consistent single buyer with budget
   authority — every interview points at a triangle ("HR wants it, IT pays") — kill or
   rescope the B2B angle regardless of pain and spend scores.
@@ -212,8 +230,8 @@ rules at once:
 
 ### Synthesis artifact
 One page per segment: hypothesis verdict, severity histogram, named buyer, current
-alternative and its gap (from the ALT codes), top 3 verbatim pain quotes, privacy verdict,
-list of committed follow-ups with dates. These pages are the
+alternative and its gap (from the ALT codes), top 3 verbatim pain quotes, privacy verdict
+(pre and post reveal) plus participation verdict, list of committed follow-ups with dates. These pages are the
 input to the build/no-build decision, not the raw transcripts.
 
 ## 6. Logistics
