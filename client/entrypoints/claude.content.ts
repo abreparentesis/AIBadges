@@ -6,7 +6,7 @@ import { distill } from '../src/engine/distill';
 import { ProfileStore } from '../src/store/local';
 import { chromeKv } from '../src/store/chrome-kv';
 import { ensureUserKey } from '../src/store/userkey';
-import { BackendSync } from '../src/sync/backend';
+import { BackendSync, NEEDS_REPUSH_KEY } from '../src/sync/backend';
 import { BACKEND_URL, INVITE_TOKEN } from '../src/config';
 import { pickModels } from '../src/engine/models';
 import { selectAcrossTimeline } from '../src/capture/select';
@@ -83,6 +83,7 @@ export default defineContentScript({
           try {
             const userKey = await ensureUserKey(chromeKv);
             synced = (await new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey }).pushProfile(profile)).version;
+            await chromeKv.set(NEEDS_REPUSH_KEY, '0'); // fresh push satisfies the post-delete repush guarantee
           } catch (e) { console.warn('[aibadges] sync failed (non-fatal)', e); synced = `error: ${String(e)}`; }
           console.log('[aibadges] done', { version, capturedChars, fast, best, thinking: profile.thinking.length, type: profile.type?.code ?? null, shifts: profile.trajectory.shifts.length, synced });
           return version;

@@ -7,6 +7,7 @@ const INVITE = 'test-invite-token';
 
 function makeApp() {
   const db = new Database(':memory:');
+  db.exec('PRAGMA foreign_keys = ON;'); // match production (createDb); guards DELETE ordering
   migrate(db);
   return createApp(db, { inviteToken: INVITE });
 }
@@ -14,6 +15,7 @@ function makeApp() {
 // Permissionless server: no invite token configured, any new key may register.
 function makeOpenApp() {
   const db = new Database(':memory:');
+  db.exec('PRAGMA foreign_keys = ON;');
   migrate(db);
   return createApp(db, { inviteToken: '' });
 }

@@ -84,11 +84,13 @@ export default function App() {
 
   async function changeDisclosure(sig: UiSignal, disclosure: Signal['disclosure']) {
     if (busy) return;
+    if (disclosure === sig.disclosure) return; // no-op click: no network call, nothing to change
     setBusy(sig.type);
     try {
       const userKey = await ensureUserKey(kv);
       const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
-      await repushIfNeeded(kv, sync);
+      // Only when publishing: a private toggle must never recreate server state after a delete.
+      if (disclosure === 'public') await repushIfNeeded(kv, sync);
       const [res] = await sync
         .setSignals([{ type: sig.type, surfacedContent: sig.surfacedContent, disclosure }]);
       const next = signals.map((s) => (s.type === sig.type ? { ...s, disclosure, shareToken: res?.shareToken ?? null } : s));
