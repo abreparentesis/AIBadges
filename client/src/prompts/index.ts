@@ -1,5 +1,5 @@
 import type { RawConversation } from '../capture/types';
-import type { EvidenceUnit } from '../engine/types';
+import type { EvidenceUnit, Capability } from '../engine/types';
 
 function renderConvos(convos: RawConversation[]): string {
   return convos.map((c, i) =>
@@ -87,6 +87,48 @@ export function capabilityPrompt(evidence: EvidenceUnit[]): string {
     '"yeggeStage":{"stage":N,"evidenceIds":[..]},"domains":[{"name":..,"band":..,"evidenceIds":[..]}]}',
     '',
     'EVIDENCE:',
+    renderEvidence(evidence),
+  ].join('\n');
+}
+
+// Adversarial second pass over the four fluency bands: re-judge each cited quote against its exact
+// dimension and re-band from what survives. A separate call (not the inline self-audit) because one
+// combined scoring reply reliably keeps quotes that don't earn their band. Mirrors the ChatGPT step 3.
+export function capabilityAuditPrompt(evidence: EvidenceUnit[], draft: Capability): string {
+  const byId = new Map(evidence.map((e) => [e.id, e] as const));
+  const renderDim = (name: string, d: { band: string; evidenceIds: string[] }) =>
+    `${name} — currently ${d.band}\n` +
+    (d.evidenceIds.length
+      ? d.evidenceIds.map((id) => `    ${id}: "${byId.get(id)?.quote ?? '(missing)'}"`).join('\n')
+      : '    (no quotes)');
+  const f = draft.aiFluency;
+  return [
+    'Audit the four AI-fluency bands below as a hostile skeptic whose only job is to REJECT any band its',
+    'quotes do not earn. For each dimension, DELETE every evidence id whose quote, read alone, does not',
+    'genuinely demonstrate it, then RE-BAND from what survives.',
+    '- delegation: keep only a handed-off, self-contained TASK. DELETE plain information questions (asking',
+    '  for a fact is not delegating a task).',
+    '- description: keep only real prompt structure (a goal WITH constraints, often a requested output',
+    '  format). DELETE terse context fragments and ordinary one-line questions — supplying a fact or',
+    '  answering the AI\'s clarifying question is not advanced prompting.',
+    '- discernment: keep only quotes that REACT TO the AI\'s output (correct/reject/narrow it, catch an',
+    '  error). DELETE the person\'s own facts, opinions, preferences, or fresh questions.',
+    '- diligence: keep only quotes that verify what the AI GAVE (challenge a source it cited, cross-check a',
+    '  claim it made, test its output). DELETE fresh factual questions and one-word asks.',
+    'RE-BAND strictly by survivors: 0 → emerging, 1 → developing, 2 → proficient, 3+ across 2+ different',
+    'conversations → advanced. When in doubt choose the LOWER band. Audit domains the same way.',
+    'Reuse only these evidence ids; never invent new ones. Return ONLY JSON shaped exactly like:',
+    '{"aiFluency":{"delegation":{"band":..,"evidenceIds":[..]},"description":{..},"discernment":{..},"diligence":{..}},',
+    '"yeggeStage":{"stage":N,"evidenceIds":[..]},"domains":[{"name":..,"band":..,"evidenceIds":[..]}]}',
+    '',
+    'CURRENT BANDS AND THEIR QUOTES:',
+    renderDim('delegation', f.delegation),
+    renderDim('description', f.description),
+    renderDim('discernment', f.discernment),
+    renderDim('diligence', f.diligence),
+    ...(draft.domains.length ? ['domains:', ...draft.domains.map((d) => renderDim(d.name, d))] : []),
+    '',
+    'FULL EVIDENCE (for context):',
     renderEvidence(evidence),
   ].join('\n');
 }

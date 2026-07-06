@@ -62,13 +62,13 @@ export function buildBridgePrompt(bundle: CaptureBundle): string {
   return `${BRIDGE_INSTRUCTIONS}\n\nINPUT:\n${JSON.stringify(bundle.export)}`;
 }
 
-// Two-message flow (invisible autorun). Step 1 mines a large evidence set; step 2 synthesizes from it
-// in the SAME conversation. Splitting the work lets the model extract far more evidence than a single
-// combined reply (which starves itself into reusing a few quotes) and keeps each reply short enough to
-// avoid output truncation on long histories.
+// Three-message flow (invisible autorun): step 1 mines a large evidence set, step 2 synthesizes the
+// profile from it, step 3 adversarially audits the fluency bands — all in the SAME conversation.
+// Splitting the work lets the model extract far more evidence than a single combined reply (which
+// starves itself into reusing a few quotes) and keeps each reply short enough to avoid truncation.
 export function buildExtractionPrompt(bundle: CaptureBundle): string {
   return [
-    'You are AIBadges (step 1 of 2: EVIDENCE EXTRACTION). Below is one JSON object describing a person\'s own ChatGPT history, with this shape:',
+    'You are AIBadges (step 1 of 3: EVIDENCE EXTRACTION). Below is one JSON object describing a person\'s own ChatGPT history, with this shape:',
     INPUT_SHAPE, '',
     `From what the person actually wrote, ${EXTRACTION_STEP} Be a critical mirror, never invent.`, '',
     EVIDENCE_RULES, '',
@@ -80,7 +80,7 @@ export function buildExtractionPrompt(bundle: CaptureBundle): string {
 }
 
 export const SYNTHESIS_PROMPT = [
-  'Step 2 of 2: SYNTHESIS. Using ONLY the evidence units you just extracted (their e1, e2, ... ids), build the profile. Every scored item cites evidence ids.',
+  'Step 2 of 3: SYNTHESIS. Using ONLY the evidence units you just extracted (their e1, e2, ... ids), build the profile. Every scored item cites evidence ids.',
   SYNTHESIS_STEPS, '', CITATION_RULE, '',
   `${JSON_RULES} Do NOT repeat the evidence array. Use exactly this shape:`,
   SYNTH_SHAPE, '',
@@ -88,3 +88,27 @@ export const SYNTHESIS_PROMPT = [
 ].join('\n');
 
 export function buildSynthesisPrompt(): string { return SYNTHESIS_PROMPT; }
+
+// Step 3: an ADVERSARIAL audit of just the four fluency bands. A separate turn (not the inline
+// self-audit inside synthesis) because one combined reply reliably keeps quotes that don't earn their
+// band — an information question scored as delegation, a terse context fragment scored as advanced
+// description. This turn does nothing but try to REJECT unearned bands, with the concrete failure
+// modes named, then re-bands from what survives. The code re-caps by evidence count on top of this.
+const AUDIT_RULES = [
+  'Audit the four AI-fluency dimensions you just scored, as a hostile skeptic whose only job is to REJECT any band its quotes do not earn. Re-read the quotes behind each dimension and DELETE from that dimension every evidence id whose quote, read alone, does not genuinely demonstrate it:',
+  '- delegation: keep only a handed-off, self-contained TASK ("evaluate this opportunity end to end", "produce a comparative table on X"). DELETE plain information questions ("how is the forensic-medicine postgrad at X?", "what is the real parking demand at X?") — asking for a fact is not delegating a task.',
+  '- description: keep only real prompt structure (a goal WITH constraints, often a requested output format). DELETE terse context fragments and ordinary one-line questions ("Private, with monthly rent", "24h - no security", "in Spanish") — supplying a fact or answering the AI\'s clarifying question is not advanced prompting.',
+  '- discernment: keep only quotes that REACT TO the AI\'s output (correct it, reject it, narrow it, catch an error). DELETE the person\'s own facts, opinions, preferences, or fresh questions.',
+  '- diligence: keep only quotes that verify what the AI GAVE (challenge a source it cited, cross-check a claim it made, test its output). DELETE fresh factual questions and one-word asks ("Validate", "does income tax rise with income?").',
+  'Then RE-BAND each dimension STRICTLY by what survives: 0 quotes → emerging, 1 → developing, 2 → proficient, 3+ across 2+ different conversations → advanced. When in doubt choose the LOWER band; keep a high band only if the surviving quotes plainly earn it. Audit domains the same way.',
+].join('\n');
+const AUDIT_SHAPE = '{"aiFluency":{"delegation":{"band":"emerging|developing|proficient|advanced","evidenceIds":["e1"]},"description":{...},"discernment":{...},"diligence":{...}},"domains":[{"name":"...","band":"...","evidenceIds":["e1"]}]}';
+
+export const AUDIT_PROMPT = [
+  'Step 3 of 3: EVIDENCE AUDIT.',
+  AUDIT_RULES, '',
+  `${JSON_RULES} Reuse the same evidence ids you already extracted (never invent new ones), and return ONLY the corrected capability object — no thinking/type/evidence. Use exactly this shape:`,
+  AUDIT_SHAPE,
+].join('\n');
+
+export function buildAuditPrompt(): string { return AUDIT_PROMPT; }

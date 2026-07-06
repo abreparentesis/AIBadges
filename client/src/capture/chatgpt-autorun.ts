@@ -1,7 +1,7 @@
 import { ChatGPTCaptureAdapter } from './chatgpt';
 import { selectAcrossTimeline } from './select';
 import { buildChatGptExport } from './chatgpt-export';
-import { buildExtractionPrompt, buildSynthesisPrompt } from './chatgpt-prompt';
+import { buildExtractionPrompt, buildSynthesisPrompt, buildAuditPrompt } from './chatgpt-prompt';
 import { setComposer, clickSend, hasChallenge } from './chatgpt-bridge';
 import { importGptReply, CAPTURE_KEY } from '../run/import-chatgpt';
 import type { RawConversation } from './types';
@@ -109,9 +109,11 @@ async function deleteConversation(id: string, token: string): Promise<void> {
   }).catch(() => { /* best-effort cleanup */ });
 }
 
-// Merge the two replies into the single object the importer expects: evidence from step 1, everything
-// else from step 2. Tolerant parsing (fenced block, trailing commas) mirrors the importer.
-function combineForImport(evidenceReply: string, synthReply: string): string {
+// Merge the three replies into the single object the importer expects: evidence from step 1, the
+// profile from step 2, and the AUDITED capability (re-judged bands + surviving ids) from step 3
+// replacing step 2's draft aiFluency/domains. Tolerant parsing (fenced block, trailing commas)
+// mirrors the importer; any unparseable reply falls back so a partial run still imports.
+function combineForImport(evidenceReply: string, synthReply: string, auditReply: string): string {
   const block = (raw: string): unknown => {
     const fence = raw.match(/```json\s*([\s\S]*?)```/i);
     const body = (fence ? fence[1] : raw).trim();
@@ -125,6 +127,14 @@ function combineForImport(evidenceReply: string, synthReply: string): string {
   } catch { /* leave empty; the importer reports if nothing is usable */ }
   let synth: Record<string, unknown> = {};
   try { synth = block(synthReply) as Record<string, unknown>; } catch { /* leave empty */ }
+  // Prefer the audited capability over the synthesis draft; keep the draft on any audit parse failure.
+  try {
+    const a = block(auditReply) as { aiFluency?: unknown; domains?: unknown };
+    if (a && typeof a === 'object' && a.aiFluency) {
+      const draftCap = (synth.capability && typeof synth.capability === 'object') ? synth.capability as Record<string, unknown> : {};
+      synth.capability = { ...draftCap, aiFluency: a.aiFluency, ...(a.domains ? { domains: a.domains } : {}) };
+    }
+  } catch { /* audit unreadable — keep the synthesis capability */ }
   return JSON.stringify({ ...synth, evidence });
 }
 
@@ -144,23 +154,30 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   if (bundle.export.conversations.length === 0) throw new Error('Captured no readable conversation text.');
   await chrome.storage.local.set({ [CAPTURE_KEY]: JSON.stringify(bundle) });
 
-  // 2. Two-message analysis in ONE throwaway conversation: extract a rich evidence set, then
-  //    synthesize the profile from it (so the model mines far more evidence than one combined reply).
-  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 0, total: 2 });
+  // 2. Three-message analysis in ONE throwaway conversation: (1) extract a rich evidence set, (2)
+  //    synthesize the profile from it, (3) adversarially audit the four fluency bands and re-band from
+  //    the quotes that survive. Splitting extraction from scoring lets the model mine far more evidence;
+  //    a separate audit turn reliably strips quotes that don't earn their band (an inline self-audit
+  //    inside synthesis does not).
+  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 0, total: 3 });
   const token = await accessToken();
   await submitPrompt(buildExtractionPrompt(bundle));
   const id = await awaitConversationId(token);
   if (!id) throw new Error('ChatGPT did not start a conversation.');
   const step1 = await awaitReply(id, token);
-  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 1, total: 2 });
+  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 1, total: 3 });
 
   await submitPrompt(buildSynthesisPrompt());
   const step2 = await awaitReply(id, token, step1.node); // wait for a reply AFTER step 1's
-  await deleteConversation(id, token);
-  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 2, total: 2 });
+  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 2, total: 3 });
 
-  // 3. Combine (evidence from step 1 + synthesis from step 2) and import.
-  const profile = await importGptReply(combineForImport(step1.text, step2.text));
+  await submitPrompt(buildAuditPrompt());
+  const step3 = await awaitReply(id, token, step2.node); // wait for a reply AFTER step 2's
+  await deleteConversation(id, token);
+  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 3, total: 3 });
+
+  // 3. Combine (evidence from step 1 + profile from step 2 + audited capability from step 3) and import.
+  const profile = await importGptReply(combineForImport(step1.text, step2.text, step3.text));
   notify({ type: 'aibadges:done', version: profile.version });
   notify({ type: 'aibadges:cg-autorun-done', version: profile.version });
 }

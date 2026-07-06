@@ -20,20 +20,46 @@ describe('computeCapability', () => {
     expect(c!.domains[0].name).toBe('software engineering');
   });
 
-  it('makes exactly one completion call on success', async () => {
+  it('makes a draft call then an adversarial audit call on success', async () => {
     let calls = 0;
     await computeCapability(evidence, { complete: async () => { calls += 1; return capabilityResponse; } });
-    expect(calls).toBe(1);
+    expect(calls).toBe(2); // draft + audit
   });
 
-  it('retries once on a fully unparseable response, then succeeds', async () => {
+  it('retries once on a fully unparseable draft, then succeeds (plus the audit call)', async () => {
     let calls = 0;
     const c = await computeCapability(evidence, {
       complete: async () => { calls += 1; return calls === 1 ? '{"aiFluency":{"del' : capabilityResponse; },
     });
-    expect(calls).toBe(2);
+    expect(calls).toBe(3); // bad draft, retried draft, audit
     expect(c).not.toBeNull();
     expect(c!.yeggeStage.stage).toBe(4);
+  });
+
+  it('uses the audit result over the draft (the audit tightens bands)', async () => {
+    const downgraded = JSON.stringify({
+      aiFluency: {
+        delegation: { band: 'emerging', evidenceIds: [] }, description: { band: 'emerging', evidenceIds: [] },
+        discernment: { band: 'emerging', evidenceIds: [] }, diligence: { band: 'emerging', evidenceIds: [] },
+      },
+      yeggeStage: { stage: 1, evidenceIds: [] }, domains: [],
+    });
+    let calls = 0;
+    const c = await computeCapability(evidence, {
+      complete: async () => { calls += 1; return calls === 1 ? capabilityResponse : downgraded; },
+    });
+    expect(calls).toBe(2);
+    expect(c!.aiFluency.delegation.band).toBe('emerging'); // audit downgraded the draft's proficient
+  });
+
+  it('falls back to the draft when the audit reply is unparseable', async () => {
+    let calls = 0;
+    const c = await computeCapability(evidence, {
+      complete: async () => { calls += 1; return calls === 1 ? capabilityResponse : 'garbage, not json'; },
+    });
+    expect(calls).toBe(2);
+    expect(c).not.toBeNull();
+    expect(c!.aiFluency.delegation.band).toBe('proficient'); // kept the draft when the audit failed
   });
 
   it('returns null (never throws) after 2 unparseable attempts', async () => {
