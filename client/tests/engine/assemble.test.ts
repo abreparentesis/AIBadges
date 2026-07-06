@@ -92,8 +92,8 @@ describe('assembleProfile', () => {
     expect(p.capability!.aiFluency.delegation.band).toBe('developing');  // 'proficient' capped by 1 quote
     expect(p.capability!.aiFluency.delegation.evidenceIds).toEqual(['e1']);
     expect(p.capability!.aiFluency.diligence.band).toBe('emerging');
-    expect(p.capability!.yeggeStage.stage).toBe(4);
-    expect(p.capability!.yeggeStage.evidenceIds).toEqual(['e1']);
+    expect(p.capability!.yeggeStage.stage).toBe(2); // derived from the capped bands (developing + emerging x3)
+    expect(p.capability!.yeggeStage.evidenceIds).toEqual(['e1']); // union of the dimensions' surviving ids
     // domain with no surviving evidence is dropped; backed domain survives
     expect(p.capability!.domains).toHaveLength(1);
     expect(p.capability!.domains[0].name).toBe('backed domain');
@@ -117,7 +117,7 @@ describe('assembleProfile', () => {
     );
     expect(p.capability!.aiFluency.delegation.band).toBe('advanced');
     expect(p.capability!.aiFluency.description.band).toBe('proficient');
-    expect(p.capability!.yeggeStage.stage).toBe(6); // Orchestrator (7-8) unreachable from chat
+    expect(p.capability!.yeggeStage.stage).toBe(3); // derived from bands (advanced+proficient+emerging+emerging); maxes at 6, never Orchestrator
   });
 
   it('omits capability entirely when parts.capability was not provided', () => {

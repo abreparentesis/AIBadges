@@ -230,7 +230,8 @@ export default function App() {
               </div>
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div className="bb-eyebrow" style={{ color: t.blue }}>Overall level</div>
-                <div style={{ fontSize: 26, fontWeight: 700, margin: '6px 0 4px' }}>{level.name}</div>
+                <div style={{ fontSize: 26, fontWeight: 700, margin: '6px 0 2px' }}>{level.name}</div>
+                <div style={{ fontSize: 12, color: t.g500 }}>Rolled up from your four fluencies below.</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
                   {(['Explorer', 'Operator', 'Practitioner', 'Orchestrator'] as const).map((n) => {
                     const isCurrent = n === level.name;

@@ -98,9 +98,18 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       discernment: anchorBanded(capability.aiFluency.discernment),
       diligence: anchorBanded(capability.aiFluency.diligence),
     };
-    // Chat can't demonstrate agent orchestration, so cap the stage at 6 (Practitioner). Orchestrator
-    // (7-8) is only reachable from an agentic source (Claude Code / Codex), which we don't ingest yet.
-    const yeggeStage = { ...capability.yeggeStage, stage: Math.min(6, capability.yeggeStage.stage), evidenceIds: keep(capability.yeggeStage.evidenceIds) };
+    // Derive the overall stage from the four evidence-capped bands so the headline level is a
+    // principled rollup of the fluencies, not an independent model number. emerging=1..advanced=4;
+    // the average maps into the 1-6 chat range, and its evidence is the union of the dimensions'.
+    // This maxes at 6, so Orchestrator (7-8) stays unreachable from chat — it unlocks only when an
+    // agentic source (Claude Code / Codex) is ingested.
+    const BAND_VALUE: Record<string, number> = { emerging: 1, developing: 2, proficient: 3, advanced: 4 };
+    const dims = [aiFluency.delegation, aiFluency.description, aiFluency.discernment, aiFluency.diligence];
+    const avgBand = dims.reduce((s, d) => s + (BAND_VALUE[d.band] ?? 1), 0) / dims.length;
+    const yeggeStage = {
+      stage: Math.max(1, Math.min(6, Math.round((avgBand / 4) * 6))),
+      evidenceIds: [...new Set(dims.flatMap((d) => d.evidenceIds))],
+    };
     const domains = capability.domains.flatMap((d) => {
       const ids = keep(d.evidenceIds);
       return ids.length === 0 ? [] : [{ ...d, evidenceIds: ids }];
