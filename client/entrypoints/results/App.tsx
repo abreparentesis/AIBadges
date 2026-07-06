@@ -215,6 +215,12 @@ export default function App() {
         const level = namedLevel(cap.yeggeStage.stage);
         const steps = learningPath(cap);
         const stageQuotes = quotesFor(cap.yeggeStage.evidenceIds);
+        const CHAT_CEIL = 6; // chat can only evidence stages 1-6; 7-8 (Orchestrator) need an agentic source
+        const BAND_RANK = ['emerging', 'developing', 'proficient', 'advanced'];
+        const weakest = [...FLUENCY]
+          .map(([key, label]) => ({ label, band: cap.aiFluency[key].band }))
+          .sort((a, b) => BAND_RANK.indexOf(a.band) - BAND_RANK.indexOf(b.band))[0];
+        const atCeiling = cap.yeggeStage.stage >= CHAT_CEIL;
         return (
           <>
             <div className="bb-eyebrow" style={{ color: t.blue }}>AI literacy</div>
@@ -245,8 +251,25 @@ export default function App() {
                     );
                   })}
                 </div>
+                <div style={{ display: 'flex', gap: 4, marginTop: 12 }} aria-hidden="true">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map((n) => {
+                    const locked = n > CHAT_CEIL;
+                    const filled = n <= cap.yeggeStage.stage;
+                    return <div key={n} style={{
+                      flex: 1, height: 7, borderRadius: 4, boxSizing: 'border-box',
+                      background: filled ? t.blue : locked ? 'transparent' : t.g200,
+                      border: locked ? `1px dashed ${t.g200}` : 'none',
+                    }} />;
+                  })}
+                </div>
                 <div style={{ fontSize: 12.5, color: t.g600, marginTop: 8, lineHeight: 1.5 }}>
-                  <b style={{ color: t.g700 }}>Orchestrator can&rsquo;t be measured from chat.</b> It means directing autonomous agents and tools across multi-step work, which conversations can&rsquo;t show. We only score it once you connect an agentic source like <b>Claude Code</b> or <b>Codex</b>; from chat alone the ceiling is Practitioner.
+                  {weakest.band !== 'advanced' && (
+                    <><b style={{ color: t.blue }}>Room to grow.</b> Your lowest fluency is <b>{weakest.label}</b> ({weakest.band}) &mdash; strengthening it is your clearest next step (see &ldquo;Grow your AI literacy&rdquo; below). </>
+                  )}
+                  {atCeiling
+                    ? <>You&rsquo;re at the top of the range chat can measure (stage {CHAT_CEIL} of 8). </>
+                    : <>You&rsquo;re at stage {cap.yeggeStage.stage} of the {CHAT_CEIL} that chat can measure. </>}
+                  The top tier, <b>Orchestrator</b> (7&ndash;8), can&rsquo;t be seen in chat at all &mdash; it means directing autonomous agents across multi-step work, and unlocks only when you connect an agentic source like <b>Claude Code</b> or <b>Codex</b>.
                 </div>
                 {stageQuotes.length > 0 && <Evidence quotes={stageQuotes} style={{ marginTop: 10 }} />}
               </div>
