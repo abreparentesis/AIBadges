@@ -4,3 +4,10 @@ node_modules/
 unpacked-extension
 .env
 .env.*
+# LikeC4 architecture viz
+.context/architecture/dist/
+.context/architecture/node_modules/
+.context/architecture/status.generated.c4
+
+# local eval harness scratch (holds raw chat excerpts — never commit)
+eval/
