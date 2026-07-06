@@ -258,6 +258,12 @@ function ChatGptPanel() {
     chrome.runtime.sendMessage({ type: 'aibadges:cg-autorun' });
   }
 
+  function stop() {
+    // Tell the worker to tear down (close the background tab, clear run state); reset the popup.
+    chrome.runtime.sendMessage({ type: 'aibadges:cg-cancel' }, () => void chrome.runtime.lastError);
+    setProg(null); setErr(''); setMode('idle');
+  }
+
   const p = prog && prog.total ? Math.round((prog.done / prog.total) * 100) : 4;
 
   return (
@@ -286,6 +292,7 @@ function ChatGptPanel() {
             <div className="bb-bar-fill" style={{ height: '100%', width: `${Math.max(3, Math.min(100, p))}%`, background: t.purple, borderRadius: 50, transition: 'width .4s ease' }} />
           </div>
           <div style={{ fontSize: 12, color: t.g500, marginTop: 8 }}>Runs in a background tab and opens your profile here automatically. You can switch tabs; nothing is added to your ChatGPT history.</div>
+          <button className="bb-btn bb-btn-secondary bb-btn-sm" style={{ width: '100%', marginTop: 12 }} onClick={stop}>Stop</button>
         </div>
       )}
 
