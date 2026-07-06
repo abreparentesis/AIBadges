@@ -90,14 +90,10 @@ async function deleteConversation(id: string, token: string): Promise<void> {
   }).catch(() => { /* best-effort cleanup */ });
 }
 
-const log = (...a: unknown[]) => console.log('[aibadges:autorun]', ...a);
-
 export async function runAutoProfile(notify: Notify): Promise<void> {
-  log('start; visibilityState =', document.visibilityState);
   // 1. Capture history (read-only), same as the manual path.
   const adapter = new ChatGPTCaptureAdapter();
   const list = await adapter.listConversations();
-  log('listed conversations:', list.length);
   if (list.length === 0) throw new Error('No ChatGPT conversations found (are you logged in to chatgpt.com?).');
   const picked = selectAcrossTimeline(list, MAX_CONVOS);
   const convos: RawConversation[] = [];
@@ -106,7 +102,6 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
     try { convos.push(await adapter.fetchConversation(picked[i].id)); } catch { /* skip one unreadable convo */ }
     notify({ type: 'aibadges:cg-phase', phase: 'capture', done: i + 1, total: picked.length });
   }
-  log('captured conversations:', convos.length);
   const bundle = buildChatGptExport(convos, new Date().toISOString(), { perConvoChars: PER_CONVO_CHARS });
   if (bundle.export.conversations.length === 0) throw new Error('Captured no readable conversation text.');
   await chrome.storage.local.set({ [CAPTURE_KEY]: JSON.stringify(bundle) });
@@ -114,20 +109,15 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   // 2. Run the analysis in a throwaway conversation, read via API, delete it.
   notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 0, total: 1 });
   const token = await accessToken();
-  log('submitting analysis prompt…');
   await submitPrompt(buildBridgePrompt(bundle));
   const id = await awaitConversationId(token);
-  log('submitted; conversation id =', id);
   if (!id) throw new Error('ChatGPT did not start a conversation.');
   const reply = await awaitReply(id, token);
-  log('reply received, length =', reply.length);
   await deleteConversation(id, token);
-  log('deleted throwaway conversation');
   notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 1, total: 1 });
 
   // 3. Import the reply (persists locally, syncs only the badge, drops the raw capture).
   const profile = await importGptReply(reply);
-  log('imported; profile version =', profile.version);
   notify({ type: 'aibadges:done', version: profile.version });
   notify({ type: 'aibadges:cg-autorun-done', version: profile.version });
 }
