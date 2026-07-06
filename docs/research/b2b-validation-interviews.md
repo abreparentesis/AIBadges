@@ -76,6 +76,9 @@ Same skeleton for all profiles; only the middle block changes.
 
 ## 4. Question bank
 
+This is a bank, not a checklist. Follow the live thread deep on 3 or 4 questions per block;
+you will not get through all of them well in the time budgeted, and shouldn't try.
+
 ### Shared opener (all profiles)
 - "Walk me through how AI tools got rolled out here. Who pushed for it, and what was the
   argument?"
@@ -114,8 +117,10 @@ that itself is a finding: the pain may not exist yet.
   tools cover it today?" (If they name a SaaS-management tool like Zylo, https://zylo.com/,
   or Vertice, https://www.vertice.one/, probe what it fails to tell them about AI
   specifically.)
-- Listen for: actual spend magnitude (if total AI spend is under ~$50k/yr the pain is likely
-  too small), renewal decisions made blind, an existing tool whose gap we would fill.
+- Listen for: actual spend magnitude relative to what we could charge (if their adjacent AI
+  spend isn't at least 5 to 10x a plausible annual price for this product, the pain is likely
+  too small to fund a purchase), renewal decisions made blind, an existing tool whose gap we
+  would fill.
 
 ### Profile C: Technical
 - "What visibility do you have into how your engineers use AI tools day to day? Show me if
@@ -133,18 +138,27 @@ that itself is a finding: the pain may not exist yet.
 
 ### Concept reaction block (all profiles, final 10 minutes only)
 
-Pitch in two sentences, then shut up: "We turn each employee's own AI chat history into an
-evidence-backed profile of how they use AI: how capably, in what modes, improving or not.
-The analysis runs inside the employee's own AI session, so raw conversations never reach us
-or you; the org sees profiles, aggregate maturity dashboards, learning paths, and a view of
-which seats are underused or redundant."
+Pitch the value only, without the privacy architecture (mentioning it up front pre-frames
+the privacy question and manufactures false acceptance): "We turn each employee's own AI
+chat history into an evidence-backed profile of how they use AI: how capably, in what modes,
+improving or not. The org sees profiles, aggregate maturity dashboards, learning paths, and
+a view of which seats are underused or redundant."
 
 Then:
 - "What's your first reaction?" (Let them talk. Note whether they go to value or to risk.)
-- Privacy probe (H4): "For this to run here, employees' chat histories get analyzed on their
-  side and only derived profiles leave. Who at your company would have to say yes, and what
-  would they say?" Push for names of the actual gatekeepers (legal, works council, security,
-  the employees themselves).
+- Privacy probe (H4), in two steps so the architecture doesn't lead the witness:
+  1. Neutral frame first: "This means your company gets a per-employee profile derived from
+     each person's chat history. Who at your company would have to say yes, and what would
+     they say?" Push for the actual gatekeepers (legal, works council, security, the
+     employees themselves). Code PRIV on this pre-reveal reaction.
+  2. Then reveal: "The analysis runs on the employee's side; raw conversations never leave
+     their session, only derived profiles do. Does that change anything?" Note whether the
+     architecture moves them (that delta is the evidence that the privacy model is a real
+     differentiator, not just tolerated).
+- Participation probe: "This needs each employee to run the analysis themselves, in their
+  own AI session. What fraction of your team would actually do it, and is a dashboard
+  covering, say, 40% of people still useful for the decision you named?" (An aggregate view
+  is worthless at low opt-in; this assumption dies here or in production.)
 - "What would you do with the maturity dashboard in the first month? Which decision does it
   feed?"
 - Commitment ask, escalating: "Can I come back in 6 weeks and show you a prototype on your
@@ -179,18 +193,27 @@ use that"), generic industry talk. Actively hunt disconfirming evidence in every
 care", "we'd just survey people".
 
 ### Decision rules (after 6 to 8 per segment)
-- **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, at least 3 show
-  existing SPEND, a consistent BUYER emerges, and ≥3 reach COMMIT-2+.
-- **Pivot** if pain is real but PRIV-RED dominates: redesign as employee-opt-in, aggregate-
-  only, and re-test with 4 more interviews before building.
+Evaluate in order — Kill first, then Pivot, then Proceed — so a segment can't match two
+rules at once:
 - **Kill the segment** if pain is mostly severity ≤1 or commitments are all COMMIT-0/1.
+- **Pivot** if pain is real (≥50% at severity ≥2) but PRIV-RED dominates (PRIV-RED in ≥50%
+  of that segment's interviews): redesign as employee-opt-in, aggregate-only, and re-test
+  with 4 more interviews before building.
+- **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, at least 3 show
+  existing SPEND, a consistent BUYER emerges, and ≥3 reach COMMIT-2+ of which at least one
+  is COMMIT-3 (a prototype-session yes is curiosity; only a paid-pilot conversation tests
+  budget and authority).
+- **Cross-segment kill (H5):** if no segment surfaces a consistent single buyer with budget
+  authority — every interview points at a triangle ("HR wants it, IT pays") — kill or
+  rescope the B2B angle regardless of pain and spend scores.
 - Rank surviving segments by (pain severity × spend evidence × commitment rate) and build
   for the top one only. Resist the dashboard-for-everyone product; the first version serves
   one buyer's one decision.
 
 ### Synthesis artifact
-One page per segment: hypothesis verdict, severity histogram, named buyer, top 3 verbatim
-pain quotes, privacy verdict, list of committed follow-ups with dates. These pages are the
+One page per segment: hypothesis verdict, severity histogram, named buyer, current
+alternative and its gap (from the ALT codes), top 3 verbatim pain quotes, privacy verdict,
+list of committed follow-ups with dates. These pages are the
 input to the build/no-build decision, not the raw transcripts.
 
 ## 6. Logistics
