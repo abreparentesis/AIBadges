@@ -80,6 +80,11 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
   let capabilityAnchored: Profile['capability'];
   if (capability) {
     const BAND_ORDER = ['emerging', 'developing', 'proficient', 'advanced'] as const;
+    // A fluency band must rest on substantive quotes. Fragments ("De la marca grow", "Validar", "in
+    // Spanish") carry no evidentiary weight for a capability, and the model routinely pads a band with
+    // them; drop them so they neither show as evidence nor count toward the band.
+    const MIN_CAP_QUOTE = 24;
+    const substantive = (id: string) => (evById.get(id)?.quote ?? '').trim().length >= MIN_CAP_QUOTE;
     const maxBandIdx = (ids: string[]): number => {
       const convoCount = new Set(ids.map((id) => evById.get(id)?.sourceRef.conversationId).filter(Boolean)).size;
       if (ids.length >= 3 && convoCount >= 2) return 3;
@@ -88,7 +93,7 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       return 0;
     };
     const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; note?: string; evidenceIds: string[] }) => {
-      const ids = keep(b.evidenceIds);
+      const ids = keep(b.evidenceIds).filter(substantive);
       const idx = Math.max(0, Math.min(BAND_ORDER.indexOf(b.band), maxBandIdx(ids)));
       return { band: BAND_ORDER[idx], ...(b.note ? { note: b.note } : {}), evidenceIds: ids };
     };

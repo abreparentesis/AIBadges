@@ -2,8 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { assembleProfile, type ProfileParts } from '../../src/engine/assemble';
 import { ProfileSchema, type EvidenceUnit } from '../../src/engine/types';
 
+// Quotes are deliberately >= 24 chars: the capability substance gate drops fragments, so short
+// placeholder quotes would be filtered out of every band.
 const ev = (id: string, conversationId: string): EvidenceUnit => ({
-  id, timestamp: '2026-01-01T00:00:00Z', type: 'decision', quote: `q-${id}`, summary: `s-${id}`,
+  id, timestamp: '2026-01-01T00:00:00Z', type: 'decision', quote: `substantive evidence quote ${id} of ample length`, summary: `s-${id}`,
+  sourceRef: { provider: 'chatgpt', conversationId },
+});
+const evShort = (id: string, conversationId: string, quote: string): EvidenceUnit => ({
+  id, timestamp: '2026-01-01T00:00:00Z', type: 'decision', quote, summary: `s-${id}`,
   sourceRef: { provider: 'chatgpt', conversationId },
 });
 const opts = {
@@ -119,6 +125,32 @@ describe('assembleProfile', () => {
     expect(p.capability!.aiFluency.delegation.note).toBe('consistently hands off whole jobs'); // rationale carried through
     expect(p.capability!.aiFluency.description.band).toBe('proficient');
     expect(p.capability!.yeggeStage.stage).toBe(3); // derived from bands (advanced+proficient+emerging+emerging); maxes at 6, never Orchestrator
+  });
+
+  it('drops sub-24-char fragment quotes from a fluency band (no padding with junk)', () => {
+    const capability = {
+      aiFluency: {
+        delegation: { band: 'advanced' as const, evidenceIds: ['g1', 'g2', 'g3', 'frag'] }, // frag is a fragment
+        description: { band: 'emerging' as const, evidenceIds: [] },
+        discernment: { band: 'proficient' as const, evidenceIds: ['frag', 'frag2'] }, // ONLY fragments
+        diligence: { band: 'emerging' as const, evidenceIds: [] },
+      },
+      yeggeStage: { stage: 6, evidenceIds: [] },
+      domains: [],
+    };
+    const p = assembleProfile(
+      {
+        evidence: [ev('g1', 'c1'), ev('g2', 'c2'), ev('g3', 'c1'), evShort('frag', 'c1', 'De la marca grow'), evShort('frag2', 'c2', 'Validar')],
+        thinking: [], trajectory: emptyTraj, capability,
+      },
+      opts,
+    );
+    // The fragment is gone from delegation; the 3 substantive quotes keep it advanced.
+    expect(p.capability!.aiFluency.delegation.evidenceIds).toEqual(['g1', 'g2', 'g3']);
+    expect(p.capability!.aiFluency.delegation.band).toBe('advanced');
+    // Discernment was backed ONLY by fragments -> nothing survives -> emerging.
+    expect(p.capability!.aiFluency.discernment.evidenceIds).toEqual([]);
+    expect(p.capability!.aiFluency.discernment.band).toBe('emerging');
   });
 
   it('omits capability entirely when parts.capability was not provided', () => {
