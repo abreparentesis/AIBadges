@@ -181,9 +181,11 @@ Tag each transcript within 24 hours of the interview with:
   budget exists; 2 = active workaround in place (spreadsheet, survey, internal tool); 1 =
   agrees it's a problem when asked; 0 = no pain. For H2 anchor to magnitude and opacity
   instead (a budget line always exists in finance, so "a budget exists" would auto-score 3):
-  3 = large AI spend with no utilization visibility and an attempted control effort; 2 =
-  spend tracked but renewal decisions made blind; 1 = agrees opacity exists; 0 = spend too
-  small to care.
+  3 = AI spend at least 5 to 10x a plausible annual price for this product, with no
+  utilization visibility and an attempted control effort; 2 = spend tracked but renewal
+  decisions made blind; 1 = agrees opacity exists; 0 = spend below that 5-10x floor, too
+  small to fund a purchase. (Binding the floor into the anchor is what lets it kill a
+  finance segment via the normal PAIN gates.)
 - `SPEND` — money already going to adjacent solutions (training platforms, SaaS-management
   tools, internal builds, consultant assessments), with amounts.
 - `ALT` — what they use today and its named gaps.
@@ -221,8 +223,8 @@ so a segment stopped early at 5 is judged by the same bar as one that ran 8.
   symptom of the privacy block and belongs to Pivot, not Kill.)
 - **Pivot** if pain is real (≥50% at severity ≥2) but PRIV-POST-RED covers ≥50% of the
   segment's interviews: redesign as employee-opt-in, aggregate-only, and re-test with 4
-  more interviews before building. Pivot likewise if the segment is otherwise strong but
-  PARTIC is mostly low: low opt-in won't fix itself, so rescope the collection model
+  more interviews before building. Pivot likewise if the segment is otherwise strong
+  (meets every Proceed bar except participation) but PARTIC is mostly low: low opt-in won't fix itself, so rescope the collection model
   (org-deployed or automated rather than employee-run), and re-test. A participation
   failure must not sit in Hold.
 - **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, ≥40% show
@@ -244,8 +246,9 @@ so a segment stopped early at 5 is judged by the same bar as one that ran 8.
 
 ### Synthesis artifact
 One page per segment: hypothesis verdict, severity histogram, named buyer, current
-alternative and its gap (from the ALT codes), top 3 verbatim pain quotes, privacy verdict
-(pre and post reveal) plus participation verdict, list of committed follow-ups with dates. These pages are the
+alternative and its gap (from the ALT codes), spend magnitude (from the SPEND codes), the
+COMMIT-rung distribution, top 3 verbatim pain quotes, privacy verdict (pre and post reveal)
+plus participation verdict, list of committed follow-ups with dates. These pages are the
 input to the build/no-build decision, not the raw transcripts.
 
 ## 6. Logistics
