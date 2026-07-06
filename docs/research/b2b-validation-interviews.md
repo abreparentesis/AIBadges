@@ -223,8 +223,8 @@ so a segment stopped early at 5 is judged by the same bar as one that ran 8.
   symptom of the privacy block and belongs to Pivot, not Kill.)
 - **Pivot** if pain is real (≥50% at severity ≥2) but PRIV-POST-RED covers ≥50% of the
   segment's interviews: redesign as employee-opt-in, aggregate-only, and re-test with 4
-  more interviews before building. Pivot likewise if the segment is otherwise strong
-  (meets every Proceed bar except participation) but PARTIC is mostly low: low opt-in won't fix itself, so rescope the collection model
+  more interviews before building. Pivot likewise if pain is real (≥50% at severity ≥2)
+  and PARTIC is mostly low, whatever the other bars say: low opt-in won't fix itself, so rescope the collection model
   (org-deployed or automated rather than employee-run), and re-test. A participation
   failure must not sit in Hold.
 - **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, ≥40% show
