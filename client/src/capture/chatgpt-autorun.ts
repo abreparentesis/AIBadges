@@ -1,7 +1,7 @@
 import { ChatGPTCaptureAdapter } from './chatgpt';
 import { selectAcrossTimeline } from './select';
 import { buildChatGptExport } from './chatgpt-export';
-import { buildBridgePrompt } from './chatgpt-prompt';
+import { buildExtractionPrompt, buildSynthesisPrompt } from './chatgpt-prompt';
 import { setComposer, clickSend, hasChallenge } from './chatgpt-bridge';
 import { importGptReply, CAPTURE_KEY } from '../run/import-chatgpt';
 import type { RawConversation } from './types';
@@ -24,7 +24,7 @@ async function accessToken(): Promise<string> {
   return s.accessToken as string;
 }
 
-interface CGNode { message?: { author?: { role?: string }; status?: string; content?: { parts?: unknown[] } } }
+interface CGNode { message?: { author?: { role?: string }; status?: string; content?: { parts?: unknown[] } }; parent?: string | null }
 
 function conversationId(): string | null {
   const m = location.pathname.match(/\/c\/([0-9a-f-]+)/i);
@@ -61,24 +61,43 @@ async function submitPrompt(prompt: string): Promise<void> {
   throw new Error('Could not submit the analysis prompt to ChatGPT.');
 }
 
-// Poll the conversation over the API until its latest assistant message is finished, then return the
-// text. Independent of DOM rendering, so it completes even while the tab is backgrounded.
-async function awaitReply(id: string, token: string, timeoutMs = 180000, everyMs = 1500): Promise<string> {
+// Walk from the conversation's current_node (the live leaf) up to the nearest assistant message, so we
+// read the LATEST reply regardless of the mapping's key order. Returns its text, status, and node id.
+function replyAtCurrentNode(mapping: Record<string, CGNode>, currentNode: string | undefined):
+  { text: string; status: string; node: string } | null {
+  let id: string | null | undefined = currentNode;
+  const seen = new Set<string>();
+  while (id && mapping[id] && !seen.has(id)) {
+    seen.add(id);
+    const m = mapping[id].message;
+    if (m?.author?.role === 'assistant') {
+      const text = ((m.content?.parts ?? []).filter((p): p is string => typeof p === 'string').join('')).trim();
+      return { text, status: m.status ?? '', node: id };
+    }
+    id = mapping[id].parent;
+  }
+  return null;
+}
+
+// Poll the conversation over the API until the latest assistant reply is finished, then return it.
+// Independent of DOM rendering, so it completes while the tab is backgrounded. excludeNode lets the
+// caller wait for a NEW reply — the second message must not return the first message's finished reply.
+async function awaitReply(id: string, token: string, excludeNode?: string, timeoutMs = 180000, everyMs = 1500):
+  Promise<{ text: string; node: string }> {
   const start = Date.now();
-  let latest = '';
+  let latest = { text: '', node: '' };
   while (Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, everyMs));
     const c = await fetch(`${BASE}/backend-api/conversation/${encodeURIComponent(id)}`, {
       credentials: 'include', headers: { authorization: `Bearer ${token}` },
     }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
     if (!c?.mapping) continue;
-    const assistants = (Object.values(c.mapping as Record<string, CGNode>)).filter((n) => n.message?.author?.role === 'assistant');
-    const last = assistants[assistants.length - 1];
-    const text = ((last?.message?.content?.parts ?? []).filter((p): p is string => typeof p === 'string').join('')).trim();
-    if (text) latest = text;
-    if (last?.message?.status === 'finished_successfully' && text) return text;
+    const r = replyAtCurrentNode(c.mapping as Record<string, CGNode>, c.current_node);
+    if (!r || (excludeNode && r.node === excludeNode)) continue; // no reply yet, or still the previous one
+    if (r.text) latest = { text: r.text, node: r.node };
+    if (r.status === 'finished_successfully' && r.text) return { text: r.text, node: r.node };
   }
-  if (latest) return latest; // finished flag never arrived but we have a full-looking reply
+  if (latest.text) return latest; // finished flag never arrived but we have a full-looking reply
   throw new Error('Timed out waiting for the ChatGPT reply.');
 }
 
@@ -88,6 +107,25 @@ async function deleteConversation(id: string, token: string): Promise<void> {
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ is_visible: false }),
   }).catch(() => { /* best-effort cleanup */ });
+}
+
+// Merge the two replies into the single object the importer expects: evidence from step 1, everything
+// else from step 2. Tolerant parsing (fenced block, trailing commas) mirrors the importer.
+function combineForImport(evidenceReply: string, synthReply: string): string {
+  const block = (raw: string): unknown => {
+    const fence = raw.match(/```json\s*([\s\S]*?)```/i);
+    const body = (fence ? fence[1] : raw).trim();
+    const m = body.match(/[[{][\s\S]*[\]}]/);
+    return JSON.parse((m ? m[0] : body).replace(/,(\s*[}\]])/g, '$1'));
+  };
+  let evidence: unknown[] = [];
+  try {
+    const e = block(evidenceReply) as unknown[] | { evidence?: unknown[] };
+    evidence = Array.isArray(e) ? e : (Array.isArray(e.evidence) ? e.evidence : []);
+  } catch { /* leave empty; the importer reports if nothing is usable */ }
+  let synth: Record<string, unknown> = {};
+  try { synth = block(synthReply) as Record<string, unknown>; } catch { /* leave empty */ }
+  return JSON.stringify({ ...synth, evidence });
 }
 
 export async function runAutoProfile(notify: Notify): Promise<void> {
@@ -106,18 +144,23 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   if (bundle.export.conversations.length === 0) throw new Error('Captured no readable conversation text.');
   await chrome.storage.local.set({ [CAPTURE_KEY]: JSON.stringify(bundle) });
 
-  // 2. Run the analysis in a throwaway conversation, read via API, delete it.
-  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 0, total: 1 });
+  // 2. Two-message analysis in ONE throwaway conversation: extract a rich evidence set, then
+  //    synthesize the profile from it (so the model mines far more evidence than one combined reply).
+  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 0, total: 2 });
   const token = await accessToken();
-  await submitPrompt(buildBridgePrompt(bundle));
+  await submitPrompt(buildExtractionPrompt(bundle));
   const id = await awaitConversationId(token);
   if (!id) throw new Error('ChatGPT did not start a conversation.');
-  const reply = await awaitReply(id, token);
-  await deleteConversation(id, token);
-  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 1, total: 1 });
+  const step1 = await awaitReply(id, token);
+  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 1, total: 2 });
 
-  // 3. Import the reply (persists locally, syncs only the badge, drops the raw capture).
-  const profile = await importGptReply(reply);
+  await submitPrompt(buildSynthesisPrompt());
+  const step2 = await awaitReply(id, token, step1.node); // wait for a reply AFTER step 1's
+  await deleteConversation(id, token);
+  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: 2, total: 2 });
+
+  // 3. Combine (evidence from step 1 + synthesis from step 2) and import.
+  const profile = await importGptReply(combineForImport(step1.text, step2.text));
   notify({ type: 'aibadges:done', version: profile.version });
   notify({ type: 'aibadges:cg-autorun-done', version: profile.version });
 }
