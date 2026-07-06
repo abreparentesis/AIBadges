@@ -149,11 +149,20 @@ export function Review({ interviewId }: { interviewId: number }) {
 
           {decided.length > 0 && (
             <>
-              <h2>Decided</h2>
+              <h2>Decided <span className="muted small">(every decision can be undone)</span></h2>
               {decided.map((c: any) => (
                 <div className={`codecard ${c.state}`} key={c.id}>
                   <b>{c.type}</b> <code>{c.value}</code>{" "}
                   <span className="muted small">{c.state}</span>
+                  {c.state === "manual" ? (
+                    <button className="undo" onClick={() => api.del(`/api/codes/${c.id}`).then(reload)}>
+                      delete
+                    </button>
+                  ) : (
+                    <button className="undo" onClick={() => setState(c.id, "ai_suggested")}>
+                      undo → back to pending
+                    </button>
+                  )}
                   {c.quote && (
                     <blockquote onClick={() => scrollToTurn(c.turnRef)}>"{c.quote}"</blockquote>
                   )}
@@ -163,9 +172,19 @@ export function Review({ interviewId }: { interviewId: number }) {
           )}
 
           <p style={{ marginTop: 20 }}>
-            <button className="primary" onClick={markReviewed} disabled={pending.length > 0}>
-              Mark reviewed{pending.length > 0 ? ` (${pending.length} pending)` : ""}
-            </button>
+            {data.status === "reviewed" ? (
+              <button
+                onClick={() =>
+                  api.post(`/api/interviews/${interviewId}/reopen`).then(() => { setVerdictDelta(null); reload(); })
+                }
+              >
+                Reopen review (undo "mark reviewed")
+              </button>
+            ) : (
+              <button className="primary" onClick={markReviewed} disabled={pending.length > 0}>
+                Mark reviewed{pending.length > 0 ? ` (${pending.length} to decide first)` : ""}
+              </button>
+            )}
           </p>
           {verdictDelta && (
             <div className="card">

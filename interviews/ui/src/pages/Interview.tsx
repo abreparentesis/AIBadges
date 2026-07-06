@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { DangerButton } from "../components/DangerButton";
 
 export function InterviewPage({ id }: { id: number }) {
   const [data, setData] = useState<any>(null);
@@ -57,6 +58,24 @@ export function InterviewPage({ id }: { id: number }) {
         {(data.status === "coded" || data.status === "reviewed") && (
           <> · <a href={`#/review/${id}`}>Review codes ({data.codes.filter((c: any) => c.state === "ai_suggested").length} suggested)</a></>
         )}
+        {data.turns.length > 0 && data.status !== "scheduled" && (
+          <>
+            {" · "}
+            <button
+              className="subtle"
+              onClick={() => api.post(`/api/interviews/${id}/code`).then(() => { watchJob(); reload(); })}
+            >
+              re-run coding
+            </button>
+            <span className="muted small"> (replaces pending suggestions; your confirmed codes are kept)</span>
+          </>
+        )}
+        {" · "}
+        <DangerButton
+          label="delete interview"
+          confirmLabel="Delete interview + transcript + codes?"
+          onConfirm={() => api.del(`/api/interviews/${id}`).then(() => { location.hash = "#/"; })}
+        />
       </p>
 
       <div

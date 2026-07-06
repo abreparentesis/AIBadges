@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 
 function useNow(runningSince: number | null): number {
@@ -17,23 +17,25 @@ export function LiveGuide({ interviewId }: { interviewId: number }) {
   const [started, setStarted] = useState<number | null>(null);
   const [stageIdx, setStageIdx] = useState(0);
   const [stageStarted, setStageStarted] = useState<number | null>(null);
-  const [asked, setAsked] = useState<Set<string>>(new Set());
+  const [asked, setAsked] = useState<Map<string, number>>(new Map()); // qid → note id
   const [notes, setNotes] = useState("");
   const savedNotes = useRef("");
   const now = useNow(started);
 
+  const refreshAsked = useCallback(async () => {
+    const d = (await api.get(`/api/interviews/${interviewId}`)) as any;
+    setInterview(d);
+    const map = new Map<string, number>();
+    for (const n of d.notes) {
+      if (n.text.startsWith("asked:")) map.set(n.text.slice(6), n.id);
+    }
+    setAsked(map);
+  }, [interviewId]);
+
   useEffect(() => {
     api.get("/api/kit").then(setKit);
-    api.get(`/api/interviews/${interviewId}`).then((d: any) => {
-      setInterview(d);
-      const askedIds = new Set<string>(
-        d.notes
-          .filter((n: any) => n.text.startsWith("asked:"))
-          .map((n: any) => n.text.slice(6)),
-      );
-      setAsked(askedIds);
-    });
-  }, [interviewId]);
+    void refreshAsked();
+  }, [refreshAsked]);
 
   // debounced note autosave
   useEffect(() => {
@@ -57,14 +59,14 @@ export function LiveGuide({ interviewId }: { interviewId: number }) {
   const profile = interview.participant.profile as "A" | "B" | "C";
   const questions = [...kit.opener, ...kit.questionBank[profile]];
 
-  function markAsked(qid: string) {
-    setAsked((prev) => {
-      const next = new Set(prev);
-      if (next.has(qid)) return next; // no un-ask; keep it simple mid-call
-      next.add(qid);
-      void api.post(`/api/interviews/${interviewId}/notes`, { text: `asked:${qid}` });
-      return next;
-    });
+  async function toggleAsked(qid: string) {
+    const noteId = asked.get(qid);
+    if (noteId !== undefined) {
+      await api.del(`/api/notes/${noteId}`);
+    } else {
+      await api.post(`/api/interviews/${interviewId}/notes`, { text: `asked:${qid}` });
+    }
+    await refreshAsked();
   }
 
   function start() {
@@ -115,8 +117,8 @@ export function LiveGuide({ interviewId }: { interviewId: number }) {
             <div key={q.id}>
               <div
                 className={`q ${asked.has(q.id) ? "asked" : ""}`}
-                onClick={() => markAsked(q.id)}
-                title="tap to mark asked"
+                onClick={() => toggleAsked(q.id)}
+                title={asked.has(q.id) ? "tap to un-mark" : "tap to mark asked"}
               >
                 {q.text}
               </div>

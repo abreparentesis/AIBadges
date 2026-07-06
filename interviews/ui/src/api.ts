@@ -24,4 +24,5 @@ export const api = {
     form.append("file", file);
     return fetch(path, { method: "POST", body: form }).then(handle);
   },
+  del: (path: string) => fetch(path, { method: "DELETE" }).then(handle),
 };

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { DangerButton } from "../components/DangerButton";
 
 export function Participants() {
   const [list, setList] = useState<any[]>([]);
@@ -100,10 +101,24 @@ export function Participants() {
                   <td>{p.profile}</td>
                   <td>{p.source}</td>
                   <td>{p.linkedinVerified ? "✓" : "⚠"}</td>
-                  <td><button className="subtle" onClick={() => newInterview(p.id)}>new interview</button></td>
+                  <td>
+                    <button className="subtle" onClick={() => newInterview(p.id)}>new interview</button>{" "}
+                    <DangerButton
+                      label="delete"
+                      confirmLabel="Delete participant + interviews?"
+                      onConfirm={() => api.del(`/api/participants/${p.id}`).then(reload)}
+                    />
+                  </td>
                 </tr>
               ))}
-              {list.length === 0 && <tr><td colSpan={5} className="muted">Empty roster.</td></tr>}
+              {list.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    Nobody yet. Add your first recruit on the left; each one gets a pseudonym
+                    (P1, P2, …) used everywhere instead of their name.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

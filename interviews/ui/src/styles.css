@@ -158,3 +158,48 @@ th { font-size: 13px; color: var(--muted); font-weight: 600; }
   background: var(--panel);
 }
 .dropzone.drag { border-color: var(--accent); background: var(--accent-soft); }
+
+/* workflow strip */
+.workflow {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 0 0 22px;
+  counter-reset: none;
+}
+.workflow li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.workflow li.now { border-color: var(--accent); box-shadow: var(--shadow); }
+.workflow li.done { opacity: 0.66; }
+.workflow .n {
+  flex: 0 0 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  margin-top: 2px;
+}
+.workflow li.done .n { background: var(--green-soft); color: var(--green); }
+
+/* destructive affordances */
+button.danger { color: var(--red); border-color: var(--line); background: transparent; }
+button.danger.armed { background: var(--red-soft); border-color: var(--red); font-weight: 600; }
+button.undo { border: none; background: transparent; color: var(--muted); padding: 4px 6px; text-decoration: underline; cursor: pointer; }
+button.undo:hover { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
