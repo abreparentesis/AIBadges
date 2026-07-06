@@ -1,0 +1,10 @@
+services:
+  aibadges-interviews:
+    build: .
+    container_name: aibadges-interviews
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4620:4620"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
