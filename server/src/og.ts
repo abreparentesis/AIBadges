@@ -34,12 +34,16 @@ export function renderBadgeSvg(content: StatBadgeContent): string {
 
   const headlineX = hasBands ? 90 : 600;
   const anchor = hasBands ? 'start' : 'middle';
+  const headlineSize = hasBands ? 48 : 72;
+  const headlineY = hasBands ? 300 : 330;
+  const smallLabel = hasBands
+    ? ''
+    : `\n  <text x="${headlineX}" y="230" text-anchor="${anchor}" font-family="Inter" font-size="40" fill="#CECBF6">AI Fluency</text>`;
 
   return `<svg width="1200" height="627" viewBox="0 0 1200 627" xmlns="http://www.w3.org/2000/svg">
   <rect width="1200" height="627" fill="#3C3489"/>
-  <text x="${headlineX}" y="150" text-anchor="${anchor}" font-family="Inter" font-size="28" letter-spacing="4" fill="#AFA9EC">&#9679; AIBADGES</text>
-  <text x="${headlineX}" y="230" text-anchor="${anchor}" font-family="Inter" font-size="40" fill="#CECBF6">AI Fluency</text>
-  <text x="${headlineX}" y="330" text-anchor="${anchor}" font-family="Inter" font-size="86" font-weight="bold" fill="#FFFFFF">AI Fluency - Stage ${stage}</text>
+  <text x="${headlineX}" y="150" text-anchor="${anchor}" font-family="Inter" font-size="28" letter-spacing="4" fill="#AFA9EC">&#9679; AIBADGES</text>${smallLabel}
+  <text x="${headlineX}" y="${headlineY}" text-anchor="${anchor}" font-family="Inter" font-size="${headlineSize}" font-weight="bold" fill="#FFFFFF">AI Fluency - Stage ${stage}</text>
   <text x="${headlineX}" y="520" text-anchor="${anchor}" font-family="Inter" font-size="24" fill="#AFA9EC">self-computed in the user's own AI session &#183; evidence-backed &#183; not verified by us</text>
 ${bars}
 </svg>`;
