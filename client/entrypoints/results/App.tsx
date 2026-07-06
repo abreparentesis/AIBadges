@@ -353,6 +353,7 @@ export default function App() {
             <div className="bb-grid2">
               {FLUENCY.map(([key, label, desc, weak]) => {
                 const band = cap.aiFluency[key].band;
+                const note = cap.aiFluency[key].note;
                 const quotes = quotesFor(cap.aiFluency[key].evidenceIds);
                 return (
                   <div key={key} className="bb-card" style={{ padding: '16px 18px' }}>
@@ -361,6 +362,7 @@ export default function App() {
                       <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: '#fff', background: bandColor[band] ?? t.g500, padding: '3px 10px', borderRadius: 50 }}>{band}</span>
                     </div>
                     <div className="bb-muted" style={{ fontSize: 13, marginTop: 4 }}>{desc}</div>
+                    {note && <div style={{ fontSize: 13, color: t.g700, marginTop: 8, lineHeight: 1.45 }}>{note}</div>}
                     {weak && <div style={{ fontSize: 11, color: t.g500, marginTop: 6, fontStyle: 'italic' }}>Only partly visible from chat &mdash; the real signal is off-platform.</div>}
                     {quotes.length > 0 && <Evidence quotes={quotes} style={{ marginTop: 10 }} />}
                   </div>

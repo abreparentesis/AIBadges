@@ -24,7 +24,9 @@ export const ClaimSchema = z.object({
   confidence: ConfidenceSchema,
 });
 
-const BandedSchema = z.object({ band: BandSchema, evidenceIds: z.array(z.string()) });
+// `note` is a one-sentence description of the recurring pattern that earns the band — the band must
+// match it. Optional so older profiles (without it) still validate.
+const BandedSchema = z.object({ band: BandSchema, note: z.string().optional(), evidenceIds: z.array(z.string()) });
 
 export const CapabilitySchema = z.object({
   aiFluency: z.object({

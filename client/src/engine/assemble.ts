@@ -87,10 +87,10 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       if (ids.length >= 1) return 1;
       return 0;
     };
-    const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; evidenceIds: string[] }) => {
+    const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; note?: string; evidenceIds: string[] }) => {
       const ids = keep(b.evidenceIds);
       const idx = Math.max(0, Math.min(BAND_ORDER.indexOf(b.band), maxBandIdx(ids)));
-      return { band: BAND_ORDER[idx], evidenceIds: ids };
+      return { band: BAND_ORDER[idx], ...(b.note ? { note: b.note } : {}), evidenceIds: ids };
     };
     const aiFluency = {
       delegation: anchorBanded(capability.aiFluency.delegation),

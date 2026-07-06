@@ -103,7 +103,7 @@ describe('assembleProfile', () => {
   it('keeps a high band when the evidence weight supports it', () => {
     const capability = {
       aiFluency: {
-        delegation: { band: 'advanced' as const, evidenceIds: ['e1', 'e2', 'e3'] }, // 3 ids / 2 convos -> advanced allowed
+        delegation: { band: 'advanced' as const, note: 'consistently hands off whole jobs', evidenceIds: ['e1', 'e2', 'e3'] }, // 3 ids / 2 convos -> advanced allowed
         description: { band: 'advanced' as const, evidenceIds: ['e1', 'e2'] },        // 2 ids -> capped to proficient
         discernment: { band: 'emerging' as const, evidenceIds: [] },
         diligence: { band: 'emerging' as const, evidenceIds: [] },
@@ -116,6 +116,7 @@ describe('assembleProfile', () => {
       opts,
     );
     expect(p.capability!.aiFluency.delegation.band).toBe('advanced');
+    expect(p.capability!.aiFluency.delegation.note).toBe('consistently hands off whole jobs'); // rationale carried through
     expect(p.capability!.aiFluency.description.band).toBe('proficient');
     expect(p.capability!.yeggeStage.stage).toBe(3); // derived from bands (advanced+proficient+emerging+emerging); maxes at 6, never Orchestrator
   });

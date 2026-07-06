@@ -153,7 +153,11 @@ export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: I
   let capability: Capability | undefined;
   const rc = root.capability;
   if (rc && typeof rc === 'object' && rc.aiFluency && typeof rc.aiFluency === 'object') {
-    const dim = (o: AnyRec | undefined) => ({ band: norm(o?.band, BANDS, 'emerging') as Capability['aiFluency']['delegation']['band'], evidenceIds: readIds(o) });
+    const dim = (o: AnyRec | undefined) => ({
+      band: norm(o?.band, BANDS, 'emerging') as Capability['aiFluency']['delegation']['band'],
+      ...(typeof o?.note === 'string' && o.note.trim() ? { note: o.note.trim() } : {}),
+      evidenceIds: readIds(o),
+    });
     const f = rc.aiFluency as AnyRec;
     const stageRaw = Math.round(Number(rc.yeggeStage?.stage ?? rc.stage?.stage ?? rc.stage));
     const stage = (Number.isFinite(stageRaw) ? Math.max(1, Math.min(8, stageRaw)) : 1) as Capability['yeggeStage']['stage'];
