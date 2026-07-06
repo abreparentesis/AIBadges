@@ -16,6 +16,7 @@ For the team picking this up. Read the [README](../README.md) and [ARCHITECTURE]
 | ChatGPT manual handoff (export → GPT → paste back) | Done. |
 | ChatGPT in-page bridge (prefill composer → user sends → read reply) | Built; **DOM interaction not yet verified against the live chatgpt.com UI.** |
 | Credibility hardening (evidence anchoring, confidence grading, quote verification) | Done in the engine; deeper validation (vs a real questionnaire, zkTLS provenance) is future work. |
+| B2B validation study tooling (`interviews/` app: live guide, GLM transcript coding, decision rules, reports) | Built and tested (76 tests, real GLM 5.2 smoke passed); deploy to the Hetzner box pending — see [interviews/README.md](../interviews/README.md). Interview kit: [research/b2b-validation-interviews.md](research/b2b-validation-interviews.md). |
 
 Tests: client Vitest suite and server `bun test` both pass (`cd client && bun run test`; `cd server && bun test`). Builds are clean.
 
