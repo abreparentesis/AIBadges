@@ -44,3 +44,22 @@ export function renderBadgeSvg(content: StatBadgeContent): string {
 ${bars}
 </svg>`;
 }
+
+import { Resvg } from '@resvg/resvg-js';
+import { join } from 'node:path';
+
+export const PNG_MAGIC = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+const FONT_DIR = join(import.meta.dir, '..', 'assets', 'fonts');
+
+export function svgToPng(svg: string): Buffer {
+  const r = new Resvg(svg, {
+    fitTo: { mode: 'width', value: 1200 },
+    font: {
+      fontFiles: [join(FONT_DIR, 'Inter-Regular.otf'), join(FONT_DIR, 'Inter-Bold.otf')],
+      loadSystemFonts: false,
+      defaultFontFamily: 'Inter',
+    },
+  });
+  return r.render().asPng();
+}

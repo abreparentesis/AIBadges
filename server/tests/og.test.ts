@@ -35,3 +35,13 @@ describe('renderBadgeSvg', () => {
     expect(svg).not.toContain('<script>');
   });
 });
+
+import { svgToPng, PNG_MAGIC } from '../src/og';
+
+describe('svgToPng', () => {
+  it('rasterizes the badge SVG to a real PNG', () => {
+    const png = svgToPng(renderBadgeSvg(content));
+    expect(png.length).toBeGreaterThan(1000);
+    expect(Array.from(png.subarray(0, 4))).toEqual(Array.from(PNG_MAGIC));
+  });
+});
