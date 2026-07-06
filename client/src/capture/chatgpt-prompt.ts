@@ -89,6 +89,26 @@ export const SYNTHESIS_PROMPT = [
 
 export function buildSynthesisPrompt(): string { return SYNTHESIS_PROMPT; }
 
+// Batched (map-reduce) synthesis. When the history is captured across several extraction batches, the
+// evidence is pooled CLIENT-side into one id-stable set and embedded here, so the model synthesizes
+// from the full pool with citations that can't drift across batches (rather than relying on it to
+// remember many earlier messages). Mirrors the Claude path, which also embeds its evidence.
+export interface PooledEvidence { id: string; conversationId: string; quote: string; summary?: string }
+function renderPooled(units: PooledEvidence[]): string {
+  return units.map((u) => `- ${u.id} (${u.conversationId}): "${u.quote}"${u.summary ? ` — ${u.summary}` : ''}`).join('\n');
+}
+export function buildSynthesisFromEvidence(units: PooledEvidence[]): string {
+  return [
+    'Step 2 of 3: SYNTHESIS. Below is the FULL set of evidence units extracted from this person\'s history (id, conversationId, quote). Use ONLY these ids; every scored item cites them.',
+    SYNTHESIS_STEPS, '', CITATION_RULE, '',
+    `${JSON_RULES} Do NOT repeat the evidence array. Use exactly this shape:`,
+    SYNTH_SHAPE, '',
+    SCALE_NOTE, '',
+    'EVIDENCE:',
+    renderPooled(units),
+  ].join('\n');
+}
+
 // Step 3: an ADVERSARIAL audit of just the four fluency bands. A separate turn (not the inline
 // self-audit inside synthesis) because one combined reply reliably keeps quotes that don't earn their
 // band — an information question scored as delegation, a terse context fragment scored as advanced
