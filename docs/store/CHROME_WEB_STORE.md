@@ -18,10 +18,6 @@ Paste one block per field in the "Privacy practices" tab.
 
 > Injects our own bundled content scripts (packaged in the extension, never remote code) into claude.ai and chatgpt.com tabs that were already open before the extension was installed or that need re-injection after an update. Without this, the user would have to reload their AI tabs before starting an analysis.
 
-### tabs
-
-> Used to (1) find the user's open claude.ai or chatgpt.com tab so the analysis can run in their existing session, (2) message that tab to start and monitor a run, and (3) open and close the extension's own results page and a background chatgpt.com tab during a run. The extension only queries for the specific AI provider URLs it supports.
-
 ### alarms
 
 > A watchdog timer that keeps the Manifest V3 service worker monitoring an in-flight analysis run. Long analyses outlive the service worker's idle timeout; the alarm wakes it to check progress and recover if the tab was closed.
@@ -86,11 +82,11 @@ Category: Productivity (Tools also fits; Productivity gets more traffic).
 - [ ] Developer account registered, $5 fee paid, publisher email verified, 2FA on
 - [ ] EU trader declaration completed (declare non-trader if publishing as an individual without monetization)
 - [ ] Privacy policy hosted and URL set in the dashboard
-- [ ] Permission justifications pasted (all seven above)
+- [ ] Permission justifications pasted (all six above)
 - [ ] Data-use disclosure checked and certified
 - [ ] Zip of `client/.output/chrome-mv3` uploaded (run `bun run build` first for a fresh production build)
 - [ ] Screenshots uploaded
 - [ ] Version in wxt.config.ts / package.json matches what you intend to ship
 - [ ] Consider first publishing as unlisted for a shakedown round
 
-Notes for later: the backend has no self-serve deletion endpoint yet, so the policy promises deletion by email. A `DELETE /v1/profile` would let the policy say "delete from the extension" instead. Also worth testing whether the `tabs` permission can be dropped: with host permissions on the three provider origins, `chrome.tabs.query` already exposes URLs for those tabs, and `tabs.create`/`remove`/`sendMessage` need no permission at all. Dropping it removes the scariest install warning ("Read your browsing history") and shortens review.
+Notes for later: the backend has no self-serve deletion endpoint yet, so the policy promises deletion by email. A `DELETE /v1/profile` would let the policy say "delete from the extension" instead. The `tabs` permission was removed before submission: host permissions on the provider origins are enough for the URL-filtered `chrome.tabs.query` calls, and `tabs.create`/`remove`/`sendMessage` need no permission, so the install prompt no longer shows "Read your browsing history".

@@ -4,7 +4,9 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   manifest: {
     name: 'AIBadges',
-    permissions: ['storage', 'scripting', 'tabs', 'alarms'],
+    // No 'tabs' permission: every tabs.query is URL-filtered to origins already granted via
+    // host_permissions, which is enough for those tabs' ids/urls to appear in query results.
+    permissions: ['storage', 'scripting', 'alarms'],
     host_permissions: [
       'https://claude.ai/*',
       'https://chatgpt.com/*',
