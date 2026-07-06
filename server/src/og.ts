@@ -46,6 +46,7 @@ ${bars}
 }
 
 import { Resvg } from '@resvg/resvg-js';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const PNG_MAGIC = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
@@ -62,4 +63,10 @@ export function svgToPng(svg: string): Buffer {
     },
   });
   return r.render().asPng();
+}
+
+let fallback: Buffer | null = null;
+export function loadFallbackPng(): Buffer {
+  if (!fallback) fallback = readFileSync(join(import.meta.dir, '..', 'assets', 'og-fallback.png'));
+  return fallback;
 }

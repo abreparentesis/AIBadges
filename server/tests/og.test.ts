@@ -36,12 +36,20 @@ describe('renderBadgeSvg', () => {
   });
 });
 
-import { svgToPng, PNG_MAGIC } from '../src/og';
+import { svgToPng, PNG_MAGIC, loadFallbackPng } from '../src/og';
 
 describe('svgToPng', () => {
   it('rasterizes the badge SVG to a real PNG', () => {
     const png = svgToPng(renderBadgeSvg(content));
     expect(png.length).toBeGreaterThan(1000);
     expect(Array.from(png.subarray(0, 4))).toEqual(Array.from(PNG_MAGIC));
+  });
+});
+
+describe('loadFallbackPng', () => {
+  it('returns the committed PNG asset', () => {
+    const png = loadFallbackPng();
+    expect(Array.from(png.subarray(0, 4))).toEqual(Array.from(PNG_MAGIC));
+    expect(loadFallbackPng()).toBe(png); // cached
   });
 });
