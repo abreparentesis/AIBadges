@@ -239,7 +239,7 @@ export function createApp(db: Database, opts: { inviteToken: string }) {
   app.use('/v1/*', cors({
     origin: '*',
     allowHeaders: ['Content-Type', 'Authorization', 'X-AIBadges-Invite'],
-    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     maxAge: 86400,
   }));
 
@@ -264,6 +264,18 @@ export function createApp(db: Database, opts: { inviteToken: string }) {
     db.query('INSERT INTO profile_versions (user_key, version, profile_json, created_at) VALUES (?, ?, ?, ?)')
       .run(key, version, JSON.stringify(profile), nowIso());
     return c.json({ version }, 201);
+  });
+
+  // DELETE /v1/profile — erase everything held for this key: profile versions, signals
+  // (which kills any share links), and the user row itself. Idempotent: deleting a key
+  // we have never seen still succeeds, so the client can offer it unconditionally.
+  app.delete('/v1/profile', (c) => {
+    const key = bearer(c.req.header('Authorization'));
+    if (!key) return c.json({ error: 'missing bearer key' }, 401);
+    db.query('DELETE FROM signals WHERE user_key = ?').run(key);
+    db.query('DELETE FROM profile_versions WHERE user_key = ?').run(key);
+    db.query('DELETE FROM users WHERE user_key = ?').run(key);
+    return c.json({ deleted: true });
   });
 
   // GET /v1/profile — latest profile + the user's current signals.

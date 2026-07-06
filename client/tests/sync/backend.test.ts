@@ -60,6 +60,30 @@ describe('BackendSync.pushProfile', () => {
   });
 });
 
+describe('BackendSync.deleteServerData', () => {
+  it('sends DELETE /v1/profile with the bearer key and resolves on ok', async () => {
+    const captured = { reqs: [] as Array<{ url: string; init?: RequestInit }> };
+    const sync = new BackendSync({
+      backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
+      fetchFn: fakeFetch(captured, () => new Response(JSON.stringify({ deleted: true }), { status: 200 })),
+    });
+    await sync.deleteServerData();
+    expect(captured.reqs[0].url).toBe('https://api.test/v1/profile');
+    expect(captured.reqs[0].init!.method).toBe('DELETE');
+    expect((captured.reqs[0].init!.headers as Record<string, string>)['Authorization']).toBe('Bearer uk1');
+    expect(captured.reqs[0].init!.body).toBeUndefined(); // nothing to send, nothing to leak
+  });
+
+  it('throws on a non-ok response', async () => {
+    const captured = { reqs: [] as Array<{ url: string; init?: RequestInit }> };
+    const sync = new BackendSync({
+      backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
+      fetchFn: fakeFetch(captured, () => new Response('nope', { status: 500 })),
+    });
+    await expect(sync.deleteServerData()).rejects.toThrow('deleteServerData failed: 500');
+  });
+});
+
 describe('BackendSync.setSignals', () => {
   it('returns the signals with share tokens', async () => {
     const captured = { reqs: [] as Array<{ url: string; init?: RequestInit }> };

@@ -32,7 +32,7 @@ We do not collect your raw conversations, chat quotes, browsing history, or cred
 
 ## Data retention and deletion
 
-Local data is yours: removing the extension (or clearing its storage from the extension's settings) deletes the profile and all evidence from your device. To delete the badge data held on our server, email us at the address below and we will remove it.
+Local data is yours: removing the extension (or clearing its storage from the extension's settings) deletes the profile and all evidence from your device. To delete the badge data held on our server, use "Delete my server data" at the bottom of the extension's results page. It removes everything we store for you, including any share links, immediately. You can also email us at the address below and we will remove it for you.
 
 ## Security
 

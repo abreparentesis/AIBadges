@@ -301,6 +301,44 @@ describe('making a section private clears its share link', () => {
   });
 });
 
+describe('DELETE /v1/profile (account deletion)', () => {
+  it('erases the profile, kills share links, and leaves other users intact', async () => {
+    const app = makeApp();
+    await call(app, 'POST', '/v1/profile', { key: 'kdel', invite: INVITE, body: sampleProfile });
+    const pub = await call(app, 'POST', '/v1/signals', { key: 'kdel', body: [TC()] });
+    const token = (await pub.json()).signals[0].shareToken as string;
+    await call(app, 'POST', '/v1/profile', { key: 'kother', invite: INVITE, body: sampleProfile });
+
+    const del = await call(app, 'DELETE', '/v1/profile', { key: 'kdel' });
+    expect(del.status).toBe(200);
+    expect(await del.json()).toEqual({ deleted: true });
+
+    expect((await call(app, 'GET', '/v1/profile', { key: 'kdel' })).status).toBe(404);
+    expect((await app.request(`/v1/share/${token}`)).status).toBe(404);
+    expect((await app.request(`/s/${token}`)).status).toBe(404);
+    expect((await call(app, 'GET', '/v1/profile', { key: 'kother' })).status).toBe(200);
+  });
+
+  it('requires re-registration after deletion when an invite is configured', async () => {
+    const app = makeApp();
+    await call(app, 'POST', '/v1/profile', { key: 'kdel2', invite: INVITE, body: sampleProfile });
+    await call(app, 'DELETE', '/v1/profile', { key: 'kdel2' });
+    // The user row is gone, so a pushing again without an invite is rejected like a new key.
+    expect((await call(app, 'POST', '/v1/profile', { key: 'kdel2', body: sampleProfile })).status).toBe(401);
+    expect((await call(app, 'POST', '/v1/profile', { key: 'kdel2', invite: INVITE, body: sampleProfile })).status).toBe(201);
+  });
+
+  it('is idempotent for a key it has never seen', async () => {
+    const res = await call(makeApp(), 'DELETE', '/v1/profile', { key: 'ghost' });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects a missing bearer key', async () => {
+    const res = await call(makeApp(), 'DELETE', '/v1/profile', {});
+    expect(res.status).toBe(401);
+  });
+});
+
 describe('share page escapes signal content', () => {
   it('does not emit raw script tags from stored content', async () => {
     const app = makeApp();

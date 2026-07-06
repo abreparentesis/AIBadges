@@ -52,6 +52,16 @@ export class BackendSync {
     return (await res.json()) as { version: number };
   }
 
+  // Self-serve erasure: removes everything the backend holds for this key (profile versions,
+  // signals, share links, the user row). Local data is untouched; that stays the user's.
+  async deleteServerData(): Promise<void> {
+    const res = await this.fetchFn(`${this.cfg.backendUrl}/v1/profile`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${this.cfg.userKey}` },
+    });
+    if (!res.ok) throw new Error(`deleteServerData failed: ${res.status}`);
+  }
+
   async setSignals(signals: SignalDisclosure[]): Promise<SignalResult[]> {
     const res = await this.fetchFn(`${this.cfg.backendUrl}/v1/signals`, {
       method: 'POST',

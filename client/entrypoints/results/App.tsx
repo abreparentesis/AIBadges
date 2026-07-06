@@ -65,6 +65,21 @@ export default function App() {
     try { chrome.runtime.sendMessage({ type: 'aibadges:opened' }); } catch { /* noop */ }
   }, []);
 
+  // Wipes everything the backend holds for this key (badge, share links). Local profile and
+  // evidence stay on-device; flipping the local signals to private mirrors the server state.
+  async function deleteServerData() {
+    if (!confirm('Delete your badge data from the AIBadges server? Your profile stays on this device, but share links will stop working.')) return;
+    setBusy('delete-server');
+    try {
+      const userKey = await ensureUserKey(kv);
+      await new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey }).deleteServerData();
+      const next = signals.map((s) => ({ ...s, disclosure: 'private' as Signal['disclosure'], shareToken: null }));
+      setSignals(next);
+      await kv.set('aibadges:signals', JSON.stringify(next));
+      alert('Deleted. Our server no longer holds any data for you.');
+    } catch (e) { alert('Delete failed: ' + String(e)); } finally { setBusy(''); }
+  }
+
   async function changeDisclosure(sig: UiSignal, disclosure: Signal['disclosure']) {
     setBusy(sig.type);
     try {
@@ -267,6 +282,16 @@ export default function App() {
           </>
         );
       })()}
+      <div style={{ marginTop: 40, paddingTop: 16, borderTop: `1px solid ${t.g200}`, display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <span className="bb-muted" style={{ fontSize: 12 }}>
+          Our server only holds the badge you synced; your chats and quotes never leave this device.
+        </span>
+        <button type="button" onClick={() => void deleteServerData()} disabled={busy === 'delete-server'}
+          style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, border: 'none', background: 'transparent',
+            cursor: 'pointer', color: t.g600, textDecoration: 'underline', padding: 0 }}>
+          {busy === 'delete-server' ? 'Deleting…' : 'Delete my server data'}
+        </button>
+      </div>
     </Shell>
   );
 }
