@@ -98,7 +98,9 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       discernment: anchorBanded(capability.aiFluency.discernment),
       diligence: anchorBanded(capability.aiFluency.diligence),
     };
-    const yeggeStage = { ...capability.yeggeStage, evidenceIds: keep(capability.yeggeStage.evidenceIds) };
+    // Chat can't demonstrate agent orchestration, so cap the stage at 6 (Practitioner). Orchestrator
+    // (7-8) is only reachable from an agentic source (Claude Code / Codex), which we don't ingest yet.
+    const yeggeStage = { ...capability.yeggeStage, stage: Math.min(6, capability.yeggeStage.stage), evidenceIds: keep(capability.yeggeStage.evidenceIds) };
     const domains = capability.domains.flatMap((d) => {
       const ids = keep(d.evidenceIds);
       return ids.length === 0 ? [] : [{ ...d, evidenceIds: ids }];

@@ -108,7 +108,7 @@ describe('assembleProfile', () => {
         discernment: { band: 'emerging' as const, evidenceIds: [] },
         diligence: { band: 'emerging' as const, evidenceIds: [] },
       },
-      yeggeStage: { stage: 5, evidenceIds: ['e1'] },
+      yeggeStage: { stage: 8, evidenceIds: ['e1'] }, // chat source -> capped to 6 (no Orchestrator)
       domains: [],
     };
     const p = assembleProfile(
@@ -117,6 +117,7 @@ describe('assembleProfile', () => {
     );
     expect(p.capability!.aiFluency.delegation.band).toBe('advanced');
     expect(p.capability!.aiFluency.description.band).toBe('proficient');
+    expect(p.capability!.yeggeStage.stage).toBe(6); // Orchestrator (7-8) unreachable from chat
   });
 
   it('omits capability entirely when parts.capability was not provided', () => {

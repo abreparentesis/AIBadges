@@ -231,8 +231,22 @@ export default function App() {
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div className="bb-eyebrow" style={{ color: t.blue }}>Overall level</div>
                 <div style={{ fontSize: 26, fontWeight: 700, margin: '6px 0 4px' }}>{level.name}</div>
-                <div className="bb-muted" style={{ fontSize: 14 }}>Explorer &rarr; Operator &rarr; Practitioner &rarr; Orchestrator</div>
-                <div style={{ fontSize: 12, color: t.g500, marginTop: 4 }}>Chat shows fluency up to Practitioner; Orchestrator reflects directing agents and tools (e.g. Claude Code), which chat can&rsquo;t see.</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                  {(['Explorer', 'Operator', 'Practitioner', 'Orchestrator'] as const).map((n) => {
+                    const isCurrent = n === level.name;
+                    const locked = n === 'Orchestrator';
+                    return (
+                      <span key={n} style={{
+                        fontSize: 12, fontWeight: 600, padding: '4px 11px', borderRadius: 50, display: 'inline-flex', alignItems: 'center', gap: 4,
+                        background: isCurrent ? t.blue : t.g50, color: isCurrent ? '#fff' : (locked ? t.g500 : t.g700),
+                        border: `1px solid ${isCurrent ? t.blue : t.g200}`, ...(locked ? { borderStyle: 'dashed' as const } : {}),
+                      }}>{locked ? '🔒 ' : ''}{n}</span>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 12.5, color: t.g600, marginTop: 8, lineHeight: 1.5 }}>
+                  <b style={{ color: t.g700 }}>Orchestrator can&rsquo;t be measured from chat.</b> It means directing autonomous agents and tools across multi-step work, which conversations can&rsquo;t show. We only score it once you connect an agentic source like <b>Claude Code</b> or <b>Codex</b>; from chat alone the ceiling is Practitioner.
+                </div>
                 {stageQuotes.length > 0 && <Evidence quotes={stageQuotes} style={{ marginTop: 10 }} />}
               </div>
             </div>
@@ -267,7 +281,7 @@ export default function App() {
 
             <SecH dot={t.success} title="Grow your AI literacy" cap="personalized" />
             {steps.length === 0 ? (
-              <div className="bb-muted">You&rsquo;re fluent across what your chats reveal. The next rung &mdash; orchestrating agents and tools across multi-step work &mdash; grows outside chat, in tools like Claude Code.</div>
+              <div className="bb-muted">You&rsquo;re fluent across what your chats reveal. The next rung, Orchestrator, is directing agents and tools across multi-step work. Chat can&rsquo;t show it; it grows in agentic tools like Claude Code or Codex, and we&rsquo;d only score it from those sources.</div>
             ) : steps.map((s) => (
               <div key={s.dimension} className="bb-card" style={{ marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
