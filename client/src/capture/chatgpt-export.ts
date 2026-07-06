@@ -22,14 +22,24 @@ export interface CaptureBundle {
   capturedAt: string;
 }
 
-export interface ExportOpts { perConvoChars?: number; }
+export interface ExportOpts {
+  perConvoChars?: number;
+  // User-centric capture: the person's OWN turns are the behavioral signal, so keep them in full and
+  // truncate each assistant turn to a short head — just enough to judge what a later user turn is
+  // reacting to (discernment/diligence). Assistant turns are usually the bulk, so this both captures
+  // the user's whole arc in a chat (not just the opening exchange) AND frees budget for more chats.
+  assistantHeadChars?: number;
+}
 
 const DEFAULT_PER_CONVO = 6000;
 
 // Truncate each conversation to a per-conversation character budget (sequentially, oldest message
 // first) so a few very long chats can't dominate the paste, and skip anything that comes out empty.
+// With assistantHeadChars set, each assistant turn is first clipped to that head so the user's turns
+// win the budget.
 export function buildChatGptExport(convos: RawConversation[], now: string, opts: ExportOpts = {}): CaptureBundle {
   const perConvo = opts.perConvoChars ?? DEFAULT_PER_CONVO;
+  const assistantHead = opts.assistantHeadChars;
   const idMap: Record<string, string> = {};
   const conversations: GptExportConversation[] = [];
 
@@ -38,7 +48,10 @@ export function buildChatGptExport(convos: RawConversation[], now: string, opts:
     const messages: GptExportMessage[] = [];
     for (const m of c.messages) {
       if (budget <= 0) break;
-      const text = m.text.length > budget ? m.text.slice(0, budget) : m.text;
+      let text = m.text;
+      // Clip an assistant turn to its head first, so a long AI answer can't crowd out the user's turns.
+      if (assistantHead != null && m.role === 'assistant' && text.length > assistantHead) text = text.slice(0, assistantHead);
+      if (text.length > budget) text = text.slice(0, budget);
       if (!text) continue;
       budget -= text.length;
       messages.push({ role: m.role, text });

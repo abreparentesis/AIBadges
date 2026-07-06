@@ -15,8 +15,9 @@ import type { RawConversation } from './types';
 type Notify = (m: Record<string, unknown>) => void;
 
 const BASE = 'https://chatgpt.com';
-const MAX_CONVOS = 30;
-const PER_CONVO_CHARS = 4000;
+const MAX_CONVOS = 50;
+const PER_CONVO_CHARS = 2500;      // user-centric capture packs a chat into far less than the old 4000
+const ASSISTANT_HEAD_CHARS = 160;  // keep only a short head of each AI turn — enough to judge a reaction
 
 async function accessToken(): Promise<string> {
   const s = await fetch(`${BASE}/api/auth/session`, { credentials: 'include' }).then((r) => r.json()).catch(() => null);
@@ -150,7 +151,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
     try { convos.push(await adapter.fetchConversation(picked[i].id)); } catch { /* skip one unreadable convo */ }
     notify({ type: 'aibadges:cg-phase', phase: 'capture', done: i + 1, total: picked.length });
   }
-  const bundle = buildChatGptExport(convos, new Date().toISOString(), { perConvoChars: PER_CONVO_CHARS });
+  const bundle = buildChatGptExport(convos, new Date().toISOString(), { perConvoChars: PER_CONVO_CHARS, assistantHeadChars: ASSISTANT_HEAD_CHARS });
   if (bundle.export.conversations.length === 0) throw new Error('Captured no readable conversation text.');
   await chrome.storage.local.set({ [CAPTURE_KEY]: JSON.stringify(bundle) });
 

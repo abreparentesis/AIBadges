@@ -32,6 +32,20 @@ describe('buildChatGptExport', () => {
     expect(exportSize({ export: exp, idMap: {}, capturedAt: '' })).toBeLessThanOrEqual(6000);
   });
 
+  it('user-centric: keeps user turns in full and clips assistant turns to the head', () => {
+    const c = convo('uuid-A', '2026-01-01T00:00:00Z', [
+      ['user', 'u'.repeat(300)], ['assistant', 'a'.repeat(3000)], ['user', 'w'.repeat(300)], ['assistant', 'b'.repeat(3000)],
+    ]);
+    const { export: exp } = buildChatGptExport([c], '2026-06-08T00:00:00Z', { perConvoChars: 2500, assistantHeadChars: 150 });
+    const msgs = exp.conversations[0].messages;
+    // Both user turns survive in full — the whole arc, not just the opening exchange.
+    const users = msgs.filter((m) => m.role === 'user');
+    expect(users).toHaveLength(2);
+    expect(users.every((m) => m.text.length === 300)).toBe(true);
+    // Assistant turns are clipped to the head.
+    expect(msgs.filter((m) => m.role === 'assistant').every((m) => m.text.length <= 150)).toBe(true);
+  });
+
   it('skips conversations that come out empty', () => {
     const { export: exp, idMap } = buildChatGptExport([
       convo('uuid-A', '2026-01-01T00:00:00Z', [['user', '']]),
