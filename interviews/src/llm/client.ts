@@ -16,7 +16,7 @@ const TIMEOUT_MS = 120_000;
  */
 export function makeClient(env: Record<string, string | undefined> = process.env, store?: Store): LlmClient {
   if (env.GLM_FAKE === "1") {
-    return { complete: async ({ json }) => (json ? "[]" : "(prose unavailable: GLM_FAKE)") };
+    return { complete: async ({ json }) => (json ? '{"codes":[]}' : "(prose unavailable: GLM_FAKE)") };
   }
   const key = env.NVIDIA_API_KEY;
   if (!key) throw new Error("NVIDIA_API_KEY is not set (launch via `phase run`)");

@@ -30,6 +30,7 @@ const app = createApp({
   dataDir,
   auth: user && pass ? { user, pass } : undefined,
   llm,
+  uiDir: join(import.meta.dir, "../ui/dist"),
 });
 
 export default { port, fetch: app.fetch };
