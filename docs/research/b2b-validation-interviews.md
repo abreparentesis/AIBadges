@@ -50,15 +50,40 @@ interviews are uniformly negative on its owning hypothesis.
 - Screener: owns or influences which AI tools are deployed and how adoption is driven.
 
 ### Where to recruit
-- Warm intros first (highest show-up rate and honesty).
-- LinkedIn outreach filtered by title + "AI enablement / AI adoption" in recent posts. People
-  publicly posting about rolling out AI are pre-qualified for the screener.
-- Communities: FinOps Foundation (https://www.finops.org/) for Profile B, CIPD or local L&D
-  communities for Profile A, CTO/engineering-leadership Slacks (e.g. Rands Leadership
-  Slack, https://randsinrepose.com/welcome-to-rands-leadership-slack/) for Profile C.
-- Do not offer to demo the product in the outreach message. Frame it as research on how
-  companies measure AI adoption ("20 minutes, I'm researching how companies like yours track
-  whether AI investment is working, not selling anything").
+Recruiting runs on research-recruiting platforms. Two are the primary channels; both are
+pay-as-you-go with no annual contract and both support live moderated interviews with
+screener questions:
+
+- **Respondent (https://www.respondent.io/)** — primary for Profiles B and C. Its panel
+  specializes in hard-to-find senior B2B roles (CFOs, IT decision makers, people leaders),
+  which is exactly the recruiting bottleneck here. Roughly $40 platform fee per session
+  plus a senior-professional incentive of $100 to $200 for 45 minutes.
+- **User Interviews (https://www.userinterviews.com/)** — primary for Profile A and
+  overflow for the others. Transparent pay-as-you-go (~$98 per B2B session plus incentive),
+  fast panel fill, and scheduling plus screener tooling built in.
+- **CleverX (https://cleverx.com/)** — fallback if either segment fills slowly: a verified
+  B2B panel with strong executive reach, credit-based with no contract, at a higher
+  per-participant cost.
+- Avoided on purpose: UserTesting (https://www.usertesting.com/) is enterprise-contract
+  only (annual minimums, no published pricing) and Wynter (https://wynter.com/) is
+  asynchronous-only, so neither fits a solo founder running live interviews.
+
+Budget roughly $200 to $300 all-in per interview, so $5k to $7k for the full 18 to 24.
+Warm intros remain a free supplement and still carry the highest honesty; run any
+intro through the same screener.
+
+Platform-specific discipline:
+- Put the screener questions (Section 2) into the platform screener verbatim, and add one
+  trap question with a factual answer (e.g. name the AI tools your company pays for and the
+  approximate seat count) — professional panelists exaggerate seniority, so verify title
+  and company against LinkedIn before accepting.
+- Do not name the product or offer a demo in the study description. Frame it as research on
+  how companies measure AI adoption ("45 minutes on how companies like yours track whether
+  AI investment is working, not selling anything").
+- Paid panelists inflate two codes: referrals (COMMIT-1) and polite enthusiasm are cheap
+  for someone being paid to talk. COMMIT-2/3 asks still work — a prototype session on their
+  own data and a paid pilot cost their org real effort — but weight COMMIT-1 from platform
+  recruits as near-zero.
 
 ## 3. Interview structure (45 to 50 minutes)
 
