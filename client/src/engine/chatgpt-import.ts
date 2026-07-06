@@ -1,7 +1,7 @@
 import { parseJsonResponse } from './json';
 import { assembleProfile } from './assemble';
 import type { CaptureBundle } from '../capture/chatgpt-export';
-import type { Profile, EvidenceUnit, Claim, Trajectory, CognitiveType, Confidence } from './types';
+import type { Profile, EvidenceUnit, Claim, Trajectory, CognitiveType, Confidence, Capability } from './types';
 
 // The AIBadges Custom GPT is the user's own model, configured by hand — so its reply shape varies.
 // We've seen two shapes in the wild: the canonical {thinking, trajectory:{shifts}, type, evidence},
@@ -14,6 +14,7 @@ import type { Profile, EvidenceUnit, Claim, Trajectory, CognitiveType, Confidenc
 type AnyRec = Record<string, any>;
 
 const EV_TYPES = ['decision', 'reasoning_move', 'episode', 'preference'] as const;
+const BANDS = ['emerging', 'developing', 'proficient', 'advanced'] as const;
 
 const asArray = (v: unknown): AnyRec[] => (Array.isArray(v) ? (v as AnyRec[]) : []);
 const norm = (s: unknown, allowed: readonly string[], dflt: string): string =>
@@ -148,8 +149,25 @@ export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: I
     }
   }
 
+  // ---- capability (optional AI-fluency 4D + stage; the AI Literacy tab renders it) ----
+  let capability: Capability | undefined;
+  const rc = root.capability;
+  if (rc && typeof rc === 'object' && rc.aiFluency && typeof rc.aiFluency === 'object') {
+    const dim = (o: AnyRec | undefined) => ({ band: norm(o?.band, BANDS, 'emerging') as Capability['aiFluency']['delegation']['band'], evidenceIds: readIds(o) });
+    const f = rc.aiFluency as AnyRec;
+    const stageRaw = Math.round(Number(rc.yeggeStage?.stage ?? rc.stage?.stage ?? rc.stage));
+    const stage = (Number.isFinite(stageRaw) ? Math.max(1, Math.min(8, stageRaw)) : 1) as Capability['yeggeStage']['stage'];
+    capability = {
+      aiFluency: { delegation: dim(f.delegation), description: dim(f.description), discernment: dim(f.discernment), diligence: dim(f.diligence) },
+      yeggeStage: { stage, evidenceIds: readIds(rc.yeggeStage) },
+      domains: asArray(rc.domains)
+        .map((d) => ({ name: String(d?.name ?? '').trim(), band: norm(d?.band, BANDS, 'emerging') as Capability['domains'][number]['band'], evidenceIds: readIds(d) }))
+        .filter((d) => d.name),
+    };
+  }
+
   const profile = assembleProfile(
-    { thinking, trajectory, type, evidence },
+    { thinking, trajectory, type, capability, evidence },
     {
       version: opts.version, now: opts.now,
       modelProvenance: 'chatgpt-custom-gpt (self-run in your ChatGPT)',
