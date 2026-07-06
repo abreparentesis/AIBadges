@@ -40,11 +40,14 @@ export interface CodeRow {
   state: CodeState;
 }
 
-export function openDb(path: string): Database {
-  const db = new Database(path);
+export function initSchema(db: Database): Database {
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec(readFileSync(join(import.meta.dir, "schema.sql"), "utf-8"));
   return db;
+}
+
+export function openDb(path: string): Database {
+  return initSchema(new Database(path));
 }
 
 function rowToParticipant(r: any): Participant {
