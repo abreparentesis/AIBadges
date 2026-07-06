@@ -188,7 +188,9 @@ Tag each transcript within 24 hours of the interview with:
   tools, internal builds, consultant assessments), with amounts.
 - `ALT` — what they use today and its named gaps.
 - `BUYER` — who they say owns budget and decision. Watch for triangles ("HR would want it
-  but IT pays") — those kill deals.
+  but IT pays") — those kill deals. A segment has a consistent BUYER when ≥50% of its
+  interviews name the same role as budget owner and no competing owner is named; the
+  Proceed rule and the cross-segment kill both use this bar.
 - `PRIV-PRE` and `PRIV-POST`, each GREEN/AMBER/RED — H4 reaction before and after the
   privacy-architecture reveal. RED = categorical block (works council, legal, culture).
   AMBER = conditional (opt-in, anonymized aggregates only, EU-hosting, no per-person view).
@@ -208,24 +210,28 @@ use that"), generic industry talk. Actively hunt disconfirming evidence in every
 "the vendor dashboard is enough", "legal would never allow it", "AI spend is too small to
 care", "we'd just survey people".
 
-### Decision rules (after 6 to 8 per segment)
+### Decision rules (after 5 to 8 per segment, including early-stopped ones)
 Evaluate in order — Kill, then Pivot, then Proceed, then Hold — so every segment lands in
 exactly one bucket. All thresholds are proportions of that segment's completed interviews,
 so a segment stopped early at 5 is judged by the same bar as one that ran 8.
-- **Kill the segment** if pain is mostly severity ≤1, or commitments are all COMMIT-0/1
-  while PRIV-POST-RED is under 50%. (The privacy guard matters: privacy-blocked prospects
-  can't commit, so low commitment under dominant PRIV-RED is a symptom of the privacy block
-  and belongs to Pivot, not Kill.)
+- **Kill the segment** if pain is mostly severity ≤1, or COMMIT-2+ is under 40% with no
+  COMMIT-3 while PRIV-POST-RED is under 50%. (The proportional bar means a stray
+  prototype-session yes can't spare a dead segment, and the privacy guard matters:
+  privacy-blocked prospects can't commit, so low commitment under dominant PRIV-RED is a
+  symptom of the privacy block and belongs to Pivot, not Kill.)
 - **Pivot** if pain is real (≥50% at severity ≥2) but PRIV-POST-RED covers ≥50% of the
   segment's interviews: redesign as employee-opt-in, aggregate-only, and re-test with 4
-  more interviews before building.
+  more interviews before building. Pivot likewise if the segment is otherwise strong but
+  PARTIC is mostly low: low opt-in won't fix itself, so rescope the collection model
+  (org-deployed or automated rather than employee-run), and re-test. A participation
+  failure must not sit in Hold.
 - **Proceed on a segment** if ≥50% score PAIN severity ≥2 on its hypothesis, ≥40% show
   existing SPEND, a consistent BUYER emerges, ≥40% reach COMMIT-2+ with at least one
   COMMIT-3 (a prototype-session yes is curiosity; only an agreement to run a paid pilot
   tests budget and authority), and PARTIC is not mostly low (a dashboard below the coverage
   they themselves called useful decides nothing).
 - **Hold** any segment matching none of the above — typically real pain with thin spend
-  evidence. (Real pain with zero commitments is a Kill, not a Hold: talk without any
+  evidence. (Real pain with almost no commitment is a Kill, not a Hold: talk without
   commitment means they don't care enough.) Hold is a no-build verdict for now; revisit
   only if something material changes, don't keep interviewing hoping for a different
   answer.
