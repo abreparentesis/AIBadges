@@ -72,13 +72,26 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       : { ...cogType, axes, confidence: gradeConfidence(allTypeIds) };
   }
 
-  // capability: prune evidenceIds per aiFluency dimension but KEEP the band even if ids become
-  // empty (a band is a critical assessment we don't want to silently drop). Prune yeggeStage ids.
-  // Drop any domain whose evidenceIds don't survive, like thinking claims.
+  // capability: prune evidenceIds per dimension AND cap the band by how much evidence survives, so a
+  // level can never exceed its backing (same weights as gradeConfidence: 0 surviving quotes -> at most
+  // emerging, 1 -> developing, 2 -> proficient, 3+ across 2+ distinct conversations -> advanced). This
+  // stops an over-generous model from asserting a high band on thin or off-topic evidence. Drop any
+  // domain whose evidenceIds don't survive, like thinking claims.
   let capabilityAnchored: Profile['capability'];
   if (capability) {
-    const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; evidenceIds: string[] }) =>
-      ({ ...b, evidenceIds: keep(b.evidenceIds) });
+    const BAND_ORDER = ['emerging', 'developing', 'proficient', 'advanced'] as const;
+    const maxBandIdx = (ids: string[]): number => {
+      const convoCount = new Set(ids.map((id) => evById.get(id)?.sourceRef.conversationId).filter(Boolean)).size;
+      if (ids.length >= 3 && convoCount >= 2) return 3;
+      if (ids.length >= 2) return 2;
+      if (ids.length >= 1) return 1;
+      return 0;
+    };
+    const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; evidenceIds: string[] }) => {
+      const ids = keep(b.evidenceIds);
+      const idx = Math.max(0, Math.min(BAND_ORDER.indexOf(b.band), maxBandIdx(ids)));
+      return { band: BAND_ORDER[idx], evidenceIds: ids };
+    };
     const aiFluency = {
       delegation: anchorBanded(capability.aiFluency.delegation),
       description: anchorBanded(capability.aiFluency.description),

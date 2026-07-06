@@ -66,13 +66,13 @@ describe('assembleProfile', () => {
     expect(none.type).toBeUndefined(); // no backed axis -> whole type dropped
   });
 
-  it('anchors capability: prunes unbacked evidenceIds but keeps bands, drops unbacked domains, retains referenced evidence', () => {
+  it('anchors capability: caps each band by surviving evidence weight, drops unbacked domains, retains referenced evidence', () => {
     const capability = {
       aiFluency: {
-        delegation: { band: 'proficient' as const, evidenceIds: ['e1', 'ghost'] },
-        description: { band: 'advanced' as const, evidenceIds: ['ghost'] }, // all unbacked -> band kept, ids empty
-        discernment: { band: 'developing' as const, evidenceIds: [] },
-        diligence: { band: 'emerging' as const, evidenceIds: ['e1'] },
+        delegation: { band: 'proficient' as const, evidenceIds: ['e1', 'ghost'] }, // 1 real quote -> capped to developing
+        description: { band: 'advanced' as const, evidenceIds: ['ghost'] },         // 0 real quotes -> capped to emerging
+        discernment: { band: 'developing' as const, evidenceIds: [] },              // 0 real quotes -> capped to emerging
+        diligence: { band: 'emerging' as const, evidenceIds: ['e1'] },              // already lowest -> stays emerging
       },
       yeggeStage: { stage: 4, evidenceIds: ['e1', 'ghost'] },
       domains: [
@@ -85,18 +85,38 @@ describe('assembleProfile', () => {
       opts,
     );
     expect(p.capability).toBeDefined();
-    // bands survive even when ids are pruned to empty
-    expect(p.capability!.aiFluency.description.band).toBe('advanced');
+    // a band can never exceed its surviving evidence
+    expect(p.capability!.aiFluency.description.band).toBe('emerging');   // asserted 'advanced' on 0 quotes
     expect(p.capability!.aiFluency.description.evidenceIds).toEqual([]);
-    // backed ids are pruned of ghosts but kept
+    expect(p.capability!.aiFluency.discernment.band).toBe('emerging');   // 'developing' on 0 quotes
+    expect(p.capability!.aiFluency.delegation.band).toBe('developing');  // 'proficient' capped by 1 quote
     expect(p.capability!.aiFluency.delegation.evidenceIds).toEqual(['e1']);
+    expect(p.capability!.aiFluency.diligence.band).toBe('emerging');
     expect(p.capability!.yeggeStage.stage).toBe(4);
     expect(p.capability!.yeggeStage.evidenceIds).toEqual(['e1']);
     // domain with no surviving evidence is dropped; backed domain survives
     expect(p.capability!.domains).toHaveLength(1);
     expect(p.capability!.domains[0].name).toBe('backed domain');
-    // referenced evidence used by capability is retained in usedEvidence
     expect(p.evidence!.map((e) => e.id)).toEqual(['e1']);
+  });
+
+  it('keeps a high band when the evidence weight supports it', () => {
+    const capability = {
+      aiFluency: {
+        delegation: { band: 'advanced' as const, evidenceIds: ['e1', 'e2', 'e3'] }, // 3 ids / 2 convos -> advanced allowed
+        description: { band: 'advanced' as const, evidenceIds: ['e1', 'e2'] },        // 2 ids -> capped to proficient
+        discernment: { band: 'emerging' as const, evidenceIds: [] },
+        diligence: { band: 'emerging' as const, evidenceIds: [] },
+      },
+      yeggeStage: { stage: 5, evidenceIds: ['e1'] },
+      domains: [],
+    };
+    const p = assembleProfile(
+      { evidence: [ev('e1', 'c1'), ev('e2', 'c2'), ev('e3', 'c1')], thinking: [], trajectory: emptyTraj, capability },
+      opts,
+    );
+    expect(p.capability!.aiFluency.delegation.band).toBe('advanced');
+    expect(p.capability!.aiFluency.description.band).toBe('proficient');
   });
 
   it('omits capability entirely when parts.capability was not provided', () => {
