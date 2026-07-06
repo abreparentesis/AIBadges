@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BackendSync, chatPrivateProfile } from '../../src/sync/backend';
+import { BackendSync, chatPrivateProfile, repushIfNeeded, NEEDS_REPUSH_KEY } from '../../src/sync/backend';
 import type { Profile } from '../../src/engine/types';
 
 const profile = { version: 1 } as unknown as Profile;
@@ -81,6 +81,57 @@ describe('BackendSync.deleteServerData', () => {
       fetchFn: fakeFetch(captured, () => new Response('nope', { status: 500 })),
     });
     await expect(sync.deleteServerData()).rejects.toThrow('deleteServerData failed: 500');
+  });
+});
+
+describe('repushIfNeeded (post-deletion profile re-push)', () => {
+  function memKv(init: Record<string, string> = {}) {
+    const m = new Map(Object.entries(init));
+    return {
+      get: async (k: string) => m.get(k) ?? null,
+      set: async (k: string, v: string) => { m.set(k, v); },
+      dump: () => Object.fromEntries(m),
+    };
+  }
+  const storedProfile = JSON.stringify({
+    version: 2, thinking: [{ claim: 'Plans first', evidenceIds: ['e1'], confidence: 'high' }],
+    evidence: [{ id: 'e1', quote: 'SECRET-VERBATIM-CHAT-LINE' }],
+  });
+
+  it('re-pushes the latest local profile (evidence stripped) and clears the flag', async () => {
+    const captured = { reqs: [] as Array<{ url: string; init?: RequestInit }> };
+    const sync = new BackendSync({
+      backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
+      fetchFn: fakeFetch(captured, () => new Response(JSON.stringify({ version: 1 }), { status: 200 })),
+    });
+    const kv = memKv({ [NEEDS_REPUSH_KEY]: '1', 'aibadges:latestVersion': '2', 'aibadges:profile:2': storedProfile });
+    expect(await repushIfNeeded(kv, sync)).toBe(true);
+    expect(captured.reqs[0].url).toBe('https://api.test/v1/profile');
+    expect(JSON.stringify(JSON.parse(captured.reqs[0].init!.body as string))).not.toContain('SECRET-VERBATIM-CHAT-LINE');
+    expect(await kv.get(NEEDS_REPUSH_KEY)).toBe('0');
+  });
+
+  it('does nothing when the flag is not set', async () => {
+    const captured = { reqs: [] as Array<{ url: string; init?: RequestInit }> };
+    const sync = new BackendSync({
+      backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
+      fetchFn: fakeFetch(captured, () => new Response('{}', { status: 200 })),
+    });
+    const kv = memKv({ 'aibadges:latestVersion': '2', 'aibadges:profile:2': storedProfile });
+    expect(await repushIfNeeded(kv, sync)).toBe(false);
+    expect(captured.reqs.length).toBe(0);
+  });
+
+  it('clears the flag even when no local profile exists to push', async () => {
+    const captured = { reqs: [] as Array<{ url: string; init?: RequestInit }> };
+    const sync = new BackendSync({
+      backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
+      fetchFn: fakeFetch(captured, () => new Response('{}', { status: 200 })),
+    });
+    const kv = memKv({ [NEEDS_REPUSH_KEY]: '1' });
+    expect(await repushIfNeeded(kv, sync)).toBe(false);
+    expect(captured.reqs.length).toBe(0);
+    expect(await kv.get(NEEDS_REPUSH_KEY)).toBe('0');
   });
 });
 

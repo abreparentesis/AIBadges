@@ -3,7 +3,7 @@ import '../../src/ui/theme.css';
 import type { Profile, Signal } from '../../src/engine/types';
 import { lookupType } from '../../src/engine/typeTable';
 import { ensureUserKey } from '../../src/store/userkey';
-import { BackendSync } from '../../src/sync/backend';
+import { BackendSync, NEEDS_REPUSH_KEY, repushIfNeeded } from '../../src/sync/backend';
 import { BACKEND_URL, INVITE_TOKEN, shareUrl } from '../../src/config';
 import { namedLevel } from '../../src/engine/levels';
 import { learningPath } from '../../src/engine/learningPath';
@@ -68,6 +68,7 @@ export default function App() {
   // Wipes everything the backend holds for this key (badge, share links). Local profile and
   // evidence stay on-device; flipping the local signals to private mirrors the server state.
   async function deleteServerData() {
+    if (busy) return; // one server mutation at a time; a racing share-toggle could resurrect data mid-delete
     if (!confirm('Delete your badge data from the AIBadges server? Your profile stays on this device, but share links will stop working.')) return;
     setBusy('delete-server');
     try {
@@ -76,15 +77,19 @@ export default function App() {
       const next = signals.map((s) => ({ ...s, disclosure: 'private' as Signal['disclosure'], shareToken: null }));
       setSignals(next);
       await kv.set('aibadges:signals', JSON.stringify(next));
+      await kv.set(NEEDS_REPUSH_KEY, '1'); // the next share must re-push the profile first
       alert('Deleted. Our server no longer holds any data for you.');
     } catch (e) { alert('Delete failed: ' + String(e)); } finally { setBusy(''); }
   }
 
   async function changeDisclosure(sig: UiSignal, disclosure: Signal['disclosure']) {
+    if (busy) return;
     setBusy(sig.type);
     try {
       const userKey = await ensureUserKey(kv);
-      const [res] = await new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey })
+      const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
+      await repushIfNeeded(kv, sync);
+      const [res] = await sync
         .setSignals([{ type: sig.type, surfacedContent: sig.surfacedContent, disclosure }]);
       const next = signals.map((s) => (s.type === sig.type ? { ...s, disclosure, shareToken: res?.shareToken ?? null } : s));
       setSignals(next);
@@ -286,7 +291,7 @@ export default function App() {
         <span className="bb-muted" style={{ fontSize: 12 }}>
           Our server only holds the badge you synced; your chats and quotes never leave this device.
         </span>
-        <button type="button" onClick={() => void deleteServerData()} disabled={busy === 'delete-server'}
+        <button type="button" onClick={() => void deleteServerData()} disabled={busy !== ''}
           style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, border: 'none', background: 'transparent',
             cursor: 'pointer', color: t.g600, textDecoration: 'underline', padding: 0 }}>
           {busy === 'delete-server' ? 'Deleting…' : 'Delete my server data'}

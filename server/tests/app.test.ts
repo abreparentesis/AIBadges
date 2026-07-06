@@ -328,6 +328,19 @@ describe('DELETE /v1/profile (account deletion)', () => {
     expect((await call(app, 'POST', '/v1/profile', { key: 'kdel2', invite: INVITE, body: sampleProfile })).status).toBe(201);
   });
 
+  // Documents intended server behavior: re-sharing after a delete is a fresh, deliberate
+  // publish (with re-registration). The client re-pushes the profile first (repushIfNeeded),
+  // so signals normally regain a backing profile; the server itself does not require one.
+  it('allows a deliberate re-share after deletion, as a fresh registration', async () => {
+    const app = makeApp();
+    await call(app, 'POST', '/v1/profile', { key: 'kre', invite: INVITE, body: sampleProfile });
+    await call(app, 'DELETE', '/v1/profile', { key: 'kre' });
+    const pub = await call(app, 'POST', '/v1/signals', { key: 'kre', invite: INVITE, body: [TC()] });
+    expect(pub.status).toBe(200);
+    const token = (await pub.json()).signals[0].shareToken as string;
+    expect((await app.request(`/s/${token}`)).status).toBe(200);
+  });
+
   it('is idempotent for a key it has never seen', async () => {
     const res = await call(makeApp(), 'DELETE', '/v1/profile', { key: 'ghost' });
     expect(res.status).toBe(200);
@@ -336,6 +349,19 @@ describe('DELETE /v1/profile (account deletion)', () => {
   it('rejects a missing bearer key', async () => {
     const res = await call(makeApp(), 'DELETE', '/v1/profile', {});
     expect(res.status).toBe(401);
+  });
+
+  // Guards the CSRF-safe property: auth must stay header-based. If the key ever moved into a
+  // cookie, a cross-site page could forge this destructive request with the browser's help.
+  it('ignores cookies/origin — only the Authorization header authenticates', async () => {
+    const app = makeApp();
+    await call(app, 'POST', '/v1/profile', { key: 'kcsrf', invite: INVITE, body: sampleProfile });
+    const res = await app.request('/v1/profile', {
+      method: 'DELETE',
+      headers: { Origin: 'https://evil.example', Cookie: 'user_key=kcsrf' }, // no Authorization
+    });
+    expect(res.status).toBe(401);
+    expect((await call(app, 'GET', '/v1/profile', { key: 'kcsrf' })).status).toBe(200); // untouched
   });
 });
 

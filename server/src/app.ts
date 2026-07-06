@@ -269,12 +269,16 @@ export function createApp(db: Database, opts: { inviteToken: string }) {
   // DELETE /v1/profile — erase everything held for this key: profile versions, signals
   // (which kills any share links), and the user row itself. Idempotent: deleting a key
   // we have never seen still succeeds, so the client can offer it unconditionally.
-  app.delete('/v1/profile', (c) => {
-    const key = bearer(c.req.header('Authorization'));
-    if (!key) return c.json({ error: 'missing bearer key' }, 401);
+  const eraseUser = db.transaction((key: string) => {
+    // Children first: signals and profile_versions reference users(user_key).
     db.query('DELETE FROM signals WHERE user_key = ?').run(key);
     db.query('DELETE FROM profile_versions WHERE user_key = ?').run(key);
     db.query('DELETE FROM users WHERE user_key = ?').run(key);
+  });
+  app.delete('/v1/profile', (c) => {
+    const key = bearer(c.req.header('Authorization'));
+    if (!key) return c.json({ error: 'missing bearer key' }, 401);
+    eraseUser(key);
     return c.json({ deleted: true });
   });
 
