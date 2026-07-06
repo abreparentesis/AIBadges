@@ -427,3 +427,19 @@ describe('share page escapes signal content', () => {
     expect(html).toContain('&lt;script&gt;');
   });
 });
+
+describe('share page og:image tags', () => {
+  it('embeds an absolute og:image with dimensions and a large twitter card', async () => {
+    const app = makeApp();
+    const res = await call(app, 'POST', '/v1/signals', { key: 'kogt', invite: INVITE, body: [{
+      type: 'statBadge', disclosure: 'public',
+      surfacedContent: { yeggeStage: 4, aiFluency: { delegation: 'developing', description: 'proficient', discernment: 'developing', diligence: 'emerging' } },
+    }] });
+    const token = (await res.json()).signals[0].shareToken as string;
+    const html = await (await app.request(`https://aibadges-api.mindmaterial.io/s/${token}`)).text();
+    expect(html).toContain(`property="og:image" content="https://aibadges-api.mindmaterial.io/og/${token}.png"`);
+    expect(html).toContain('property="og:image:width" content="1200"');
+    expect(html).toContain('property="og:image:height" content="627"');
+    expect(html).toContain('name="twitter:card" content="summary_large_image"');
+  });
+});

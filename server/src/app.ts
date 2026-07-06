@@ -58,6 +58,7 @@ export function renderCardBody(type: string, content: Record<string, unknown>): 
 function renderReportPage(
   signals: Array<{ type: string; surfacedContent: Record<string, unknown> }>,
   provenance: string,
+  ogImageUrl?: string,
 ): string {
   const byType = (t: string) => signals.find((s) => s.type === t)?.surfacedContent;
   const typeC = byType('typeCard');
@@ -68,8 +69,14 @@ function renderReportPage(
   const og = typeC
     ? `<meta property="og:title" content="I'm ${esc(typeC.code ?? '')} — ${esc(typeC.name ?? '')}">
 <meta property="og:description" content="${esc(typeC.summary ?? 'My cognitive profile, computed from my own AI chats.')}">
-<meta name="twitter:card" content="summary"><meta property="og:site_name" content="AIBadges">`
+<meta property="og:site_name" content="AIBadges">`
     : `<meta property="og:title" content="AIBadges profile">`;
+
+  const ogImage = ogImageUrl
+    ? `<meta property="og:image" content="${esc(ogImageUrl)}">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="627">
+<meta name="twitter:card" content="summary_large_image">`
+    : '<meta name="twitter:card" content="summary">';
 
   // Cognitive Type hero (reuse the collectible card body) + summary.
   let typeSection = '';
@@ -148,6 +155,7 @@ function renderReportPage(
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>AIBadges profile</title>
 ${og}
+${ogImage}
 <style>
 :root{
   --blue:#0046ff;--purple:#5737f4;--mint:#3effc8;--lime:#c4ff3c;--pink:#ff5983;--amber:#f5a623;
@@ -371,9 +379,13 @@ export function createApp(db: Database, opts: { inviteToken: string; ogRender?: 
     }
     const pubs = db.query("SELECT type, surfaced_json FROM signals WHERE user_key = ? AND disclosure = 'public'")
       .all(owner.user_key) as Array<{ type: string; surfaced_json: string }>;
+    const url = new URL(c.req.url);
+    const proto = c.req.header('x-forwarded-proto') ?? url.protocol.replace(':', '');
+    const ogImageUrl = `${proto}://${url.host}/og/${c.req.param('token')}.png`;
     return c.html(renderReportPage(
       pubs.map((s) => ({ type: s.type, surfacedContent: JSON.parse(s.surfaced_json) as Record<string, unknown> })),
       PROVENANCE_LABEL,
+      ogImageUrl,
     ));
   });
 
