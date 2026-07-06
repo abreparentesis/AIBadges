@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import type { Database } from 'bun:sqlite';
 import { ProfileSchema, SignalInputSchema } from './types';
+import { renderBadgeSvg, svgToPng, loadFallbackPng, type StatBadgeContent } from './og';
 
 const PROVENANCE_LABEL = 'Self-computed in your own AI session. Not verified by us.';
 
@@ -221,7 +222,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--g200);font-si
 </body></html>`;
 }
 
-export function createApp(db: Database, opts: { inviteToken: string }) {
+export function createApp(db: Database, opts: { inviteToken: string; ogRender?: (content: StatBadgeContent) => Buffer }) {
   const app = new Hono();
 
   // Register a brand-new user key if needed, returning whether the request may proceed.
@@ -337,6 +338,27 @@ export function createApp(db: Database, opts: { inviteToken: string }) {
       .get(c.req.param('token')) as { type: string; surfaced_json: string; disclosure: string } | null;
     if (!row || row.disclosure === 'private') return c.json({ error: 'not found' }, 404);
     return c.json({ type: row.type, surfacedContent: JSON.parse(row.surfaced_json), provenanceLabel: PROVENANCE_LABEL });
+  });
+
+  // GET /og/:token.png — the LinkedIn og:image. Renders the token owner's PUBLIC statBadge.
+  // Same policy as /s/:token: unknown or private is a plain 404 (no existence oracle).
+  const ogRender = opts.ogRender ?? ((c: StatBadgeContent) => svgToPng(renderBadgeSvg(c)));
+  app.get('/og/:token{.+\\.png}', (c) => {
+    const token = c.req.param('token').replace(/\.png$/, '');
+    const owner = db.query("SELECT user_key FROM signals WHERE share_token = ? AND disclosure = 'public'")
+      .get(token) as { user_key: string } | null;
+    if (!owner) return c.json({ error: 'not found' }, 404);
+    const stat = db.query("SELECT surfaced_json FROM signals WHERE user_key = ? AND type = 'statBadge' AND disclosure = 'public'")
+      .get(owner.user_key) as { surfaced_json: string } | null;
+    if (!stat) return c.json({ error: 'not found' }, 404);
+    let png: Buffer;
+    try {
+      png = ogRender(JSON.parse(stat.surfaced_json) as StatBadgeContent);
+    } catch (e) {
+      console.error('[og] render failed, serving fallback:', e);
+      png = loadFallbackPng();
+    }
+    return c.body(new Uint8Array(png), 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=300' });
   });
 
   // GET /s/:token — public, human-readable full report showing the owner's PUBLIC sections only.

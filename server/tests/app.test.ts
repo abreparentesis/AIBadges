@@ -367,6 +367,52 @@ describe('DELETE /v1/profile (account deletion)', () => {
   });
 });
 
+describe('GET /og/:token.png (badge image)', () => {
+  const statPub = {
+    type: 'statBadge', disclosure: 'public',
+    surfacedContent: { yeggeStage: 5, aiFluency: { delegation: 'proficient', description: 'advanced', discernment: 'developing', diligence: 'proficient' } },
+  };
+
+  it('serves a PNG for a public statBadge token', async () => {
+    const app = makeApp();
+    const res = await call(app, 'POST', '/v1/signals', { key: 'kog', invite: INVITE, body: [statPub] });
+    const token = (await res.json()).signals[0].shareToken as string;
+    const img = await app.request(`/og/${token}.png`);
+    expect(img.status).toBe(200);
+    expect(img.headers.get('content-type')).toBe('image/png');
+    expect(img.headers.get('cache-control')).toContain('max-age=300');
+    const body = new Uint8Array(await img.arrayBuffer());
+    expect(Array.from(body.subarray(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+
+  it('404s an unknown token', async () => {
+    expect((await makeApp().request('/og/nope.png')).status).toBe(404);
+  });
+
+  it('404s when the statBadge is private even if another section is public', async () => {
+    const app = makeApp();
+    const res = await call(app, 'POST', '/v1/signals', { key: 'kog2', invite: INVITE, body: [
+      TC(), { ...statPub, disclosure: 'private' },
+    ] });
+    const typeToken = ((await res.json()).signals as Array<{ type: string; shareToken: string | null }>)
+      .find((s) => s.type === 'typeCard')!.shareToken as string;
+    expect((await app.request(`/og/${typeToken}.png`)).status).toBe(404);
+  });
+
+  it('serves the fallback PNG with 200 when rendering throws', async () => {
+    const db = new Database(':memory:');
+    db.exec('PRAGMA foreign_keys = ON;');
+    migrate(db);
+    const app = createApp(db, { inviteToken: INVITE, ogRender: () => { throw new Error('boom'); } });
+    const res = await call(app, 'POST', '/v1/signals', { key: 'kog3', invite: INVITE, body: [statPub] });
+    const token = (await res.json()).signals[0].shareToken as string;
+    const img = await app.request(`/og/${token}.png`);
+    expect(img.status).toBe(200);
+    const body = new Uint8Array(await img.arrayBuffer());
+    expect(Array.from(body.subarray(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+});
+
 describe('share page escapes signal content', () => {
   it('does not emit raw script tags from stored content', async () => {
     const app = makeApp();
