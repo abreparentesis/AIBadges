@@ -198,10 +198,55 @@ export function makeStore(db: Database) {
       db.query("INSERT INTO notes (interview_id, text) VALUES (?, ?)").run(interviewId, text);
     },
 
-    listNotes(interviewId: number): { text: string; createdAt: string }[] {
+    listNotes(interviewId: number): { id: number; text: string; createdAt: string }[] {
       return db
-        .query("SELECT text, created_at createdAt FROM notes WHERE interview_id = ? ORDER BY id")
+        .query("SELECT id, text, created_at createdAt FROM notes WHERE interview_id = ? ORDER BY id")
         .all(interviewId) as any[];
+    },
+
+    deleteNote(id: number): void {
+      db.query("DELETE FROM notes WHERE id = ?").run(id);
+    },
+
+    /** Delete one code row (UI restricts this to manual codes; suggestions are rejected instead). */
+    deleteCode(id: number): void {
+      db.query("DELETE FROM codes WHERE id = ?").run(id);
+    },
+
+    getCode(id: number): CodeRow | null {
+      const r = db.query("SELECT * FROM codes WHERE id = ?").get(id);
+      return r ? rowToCode(r) : null;
+    },
+
+    /** Remove pending suggestions so a re-run replaces instead of duplicating. */
+    clearAiSuggested(interviewId: number): void {
+      db.query("DELETE FROM codes WHERE interview_id = ? AND state = 'ai_suggested'").run(interviewId);
+    },
+
+    deleteInterview(id: number): void {
+      const tx = db.transaction(() => {
+        db.query("DELETE FROM codes WHERE interview_id = ?").run(id);
+        db.query("DELETE FROM notes WHERE interview_id = ?").run(id);
+        db.query("DELETE FROM transcripts WHERE interview_id = ?").run(id);
+        db.query("DELETE FROM interviews WHERE id = ?").run(id);
+      });
+      tx();
+    },
+
+    deleteParticipant(id: number): void {
+      const interviews = (
+        db.query("SELECT id FROM interviews WHERE participant_id = ?").all(id) as any[]
+      ).map((r) => r.id as number);
+      const tx = db.transaction(() => {
+        for (const iid of interviews) {
+          db.query("DELETE FROM codes WHERE interview_id = ?").run(iid);
+          db.query("DELETE FROM notes WHERE interview_id = ?").run(iid);
+          db.query("DELETE FROM transcripts WHERE interview_id = ?").run(iid);
+        }
+        db.query("DELETE FROM interviews WHERE participant_id = ?").run(id);
+        db.query("DELETE FROM participants WHERE id = ?").run(id);
+      });
+      tx();
     },
 
     logLlmCall(l: { purpose: string; promptHash: string; ms: number; ok: boolean; error?: string }): void {

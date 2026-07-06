@@ -40,6 +40,8 @@ export function mountApi(app: Hono, deps: ApiDeps) {
       const turns = store.getTurns(interviewId);
       if (turns.length === 0) throw new Error("no transcript");
       const { suggestions, failedChunks } = await codeTranscript(turns, participant.profile, llm);
+      // a re-run replaces pending suggestions; confirmed/edited/manual decisions are kept
+      store.clearAiSuggested(interviewId);
       store.insertCodes(
         suggestions.map((s) => ({
           interviewId,
@@ -153,11 +155,51 @@ export function mountApi(app: Hono, deps: ApiDeps) {
   app.post("/api/codes/:id", async (c) => {
     const id = Number(c.req.param("id"));
     const b = await c.req.json();
-    if (!["confirmed", "rejected", "edited"].includes(b.state)) {
-      return c.json({ error: "state must be confirmed|rejected|edited" }, 400);
+    // 'ai_suggested' is the undo: it returns a decided code to the pending pile
+    if (!["confirmed", "rejected", "edited", "ai_suggested"].includes(b.state)) {
+      return c.json({ error: "state must be confirmed|rejected|edited|ai_suggested" }, 400);
     }
     store.setCodeState(id, b.state, b.value);
     return c.json({ ok: true });
+  });
+
+  app.delete("/api/codes/:id", (c) => {
+    const id = Number(c.req.param("id"));
+    const code = store.getCode(id);
+    if (!code) return c.json({ error: "not found" }, 404);
+    if (code.state !== "manual") {
+      return c.json({ error: "only manual codes can be deleted; reject suggestions instead" }, 400);
+    }
+    store.deleteCode(id);
+    return c.json({ ok: true });
+  });
+
+  app.delete("/api/notes/:id", (c) => {
+    store.deleteNote(Number(c.req.param("id")));
+    return c.json({ ok: true });
+  });
+
+  app.delete("/api/interviews/:id", (c) => {
+    const id = Number(c.req.param("id"));
+    if (!store.getInterview(id)) return c.json({ error: "not found" }, 404);
+    store.deleteInterview(id);
+    return c.json({ ok: true });
+  });
+
+  app.delete("/api/participants/:id", (c) => {
+    const id = Number(c.req.param("id"));
+    if (!store.getParticipant(id)) return c.json({ error: "not found" }, 404);
+    store.deleteParticipant(id);
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/interviews/:id/reopen", (c) => {
+    const id = Number(c.req.param("id"));
+    const interview = store.getInterview(id);
+    if (!interview) return c.json({ error: "not found" }, 404);
+    if (interview.status !== "reviewed") return c.json({ error: "only reviewed interviews can be reopened" }, 400);
+    store.setInterviewStatus(id, "coded");
+    return c.json({ ok: true, segments: segmentVerdicts(store) });
   });
 
   app.post("/api/interviews/:id/codes", async (c) => {
