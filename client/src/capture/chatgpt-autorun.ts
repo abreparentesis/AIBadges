@@ -34,10 +34,21 @@ function conversationId(): string | null {
   return m ? m[1] : null;
 }
 
-// After a submit, ChatGPT navigates from "/" to "/c/{id}" a beat later (once the response starts),
-// so the id is not there immediately. Poll the URL until it appears. As a fallback (in case the SPA
-// route lags badly in a throttled background tab), take the most recently updated conversation.
-async function awaitConversationId(token: string, timeoutMs = 45000, everyMs = 800): Promise<string | null> {
+async function topConversationId(token: string): Promise<string | null> {
+  try {
+    const j = await fetch(`${BASE}/backend-api/conversations?offset=0&limit=1&order=updated`, {
+      credentials: 'include', headers: { authorization: `Bearer ${token}` },
+    }).then((r) => (r.ok ? r.json() : null));
+    return j?.items?.[0]?.id ?? null;
+  } catch { return null; }
+}
+
+// After a submit, ChatGPT navigates from "/" to "/c/{id}" a beat later (once the response starts), so
+// the id is not there immediately. Poll the URL until it appears. Fallback (SPA route lagging in a
+// throttled tab): take the most-recently-updated conversation — but ONLY if it is NEW since the run
+// started (differs from preTopId). Otherwise the top chat is a real user conversation, and binding to
+// it would post analysis prompts into, and later hide, a genuine chat. Fail loudly instead.
+async function awaitConversationId(token: string, preTopId: string | null, timeoutMs = 45000, everyMs = 800): Promise<string | null> {
   const start = Date.now();
   let id = conversationId();
   while (!id && Date.now() - start < timeoutMs) {
@@ -45,12 +56,8 @@ async function awaitConversationId(token: string, timeoutMs = 45000, everyMs = 8
     id = conversationId();
   }
   if (id) return id;
-  try {
-    const j = await fetch(`${BASE}/backend-api/conversations?offset=0&limit=1&order=updated`, {
-      credentials: 'include', headers: { authorization: `Bearer ${token}` },
-    }).then((r) => (r.ok ? r.json() : null));
-    return j?.items?.[0]?.id ?? null;
-  } catch { return null; }
+  const top = await topConversationId(token);
+  return top && top !== preTopId ? top : null;
 }
 
 // Fill the composer and click ChatGPT's own send button, retrying while React enables the button.
@@ -144,8 +151,10 @@ export function parseEvidence(reply: string): RawUnit[] {
   for (const u of arr) {
     const o = u as Record<string, unknown> | null;
     if (!o || typeof o !== 'object' || typeof o.quote !== 'string' || !o.quote) continue;
+    const conversationId = String(o.conversationId ?? o.conversation_id ?? '');
+    if (!conversationId) continue; // un-attributed: can't be dated, and would collapse into one 'unknown' bucket
     out.push({
-      conversationId: String(o.conversationId ?? o.conversation_id ?? ''),
+      conversationId,
       quote: o.quote,
       summary: typeof o.summary === 'string' ? o.summary : '',
       type: typeof o.type === 'string' ? o.type : 'episode',
@@ -157,14 +166,25 @@ export function parseEvidence(reply: string): RawUnit[] {
 // Assemble the object the importer expects: the client-owned pooled evidence, the profile from
 // synthesis, and the AUDITED capability (re-judged bands + surviving ids) replacing synthesis's draft
 // aiFluency/domains. Any unparseable model reply falls back so a partial run still imports.
+const FLUENCY_KEYS = ['delegation', 'description', 'discernment', 'diligence'] as const;
+
 export function combineForImport(pooled: PooledUnit[], synthReply: string, auditReply: string): string {
   let synth: Record<string, unknown> = {};
-  try { synth = parseJsonBlock(synthReply) as Record<string, unknown>; } catch { /* leave empty */ }
   try {
-    const a = parseJsonBlock(auditReply) as { aiFluency?: unknown; domains?: unknown };
-    if (a && typeof a === 'object' && a.aiFluency) {
+    const p = parseJsonBlock(synthReply);
+    if (p && typeof p === 'object' && !Array.isArray(p)) synth = p as Record<string, unknown>;
+  } catch { /* leave empty */ }
+  try {
+    const a = parseJsonBlock(auditReply) as { aiFluency?: Record<string, unknown>; domains?: unknown };
+    const flu = a?.aiFluency;
+    // Only accept the audited capability if it re-bands ALL FOUR dimensions. A partial reply
+    // (e.g. {"aiFluency":{}}) would leave the missing dimensions undefined and the importer would
+    // default them to `emerging`, silently collapsing a real profile. On a partial/missing audit,
+    // keep the synthesis draft (matching the Claude path's schema guard).
+    const complete = flu && typeof flu === 'object' && FLUENCY_KEYS.every((k) => flu[k] && typeof flu[k] === 'object');
+    if (complete) {
       const draftCap = (synth.capability && typeof synth.capability === 'object') ? synth.capability as Record<string, unknown> : {};
-      synth.capability = { ...draftCap, aiFluency: a.aiFluency, ...(a.domains ? { domains: a.domains } : {}) };
+      synth.capability = { ...draftCap, aiFluency: flu, ...(a.domains ? { domains: a.domains } : {}) };
     }
   } catch { /* audit unreadable — keep the synthesis capability */ }
   return JSON.stringify({ ...synth, evidence: pooled });
@@ -197,31 +217,41 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   notify({ type: 'aibadges:cg-phase', phase: 'analysis', done, total: totalSteps });
 
   const token = await accessToken();
+  const preTopId = await topConversationId(token); // to tell a NEW conversation from a real one in the fallback
   const pooled: PooledUnit[] = [];
   let id: string | null = null;
   let lastNode: string | undefined;
-  for (const batch of batches) {
-    const subBundle = { export: { ...bundle.export, conversations: batch }, idMap: bundle.idMap, capturedAt: bundle.capturedAt };
-    await submitPrompt(buildExtractionPrompt(subBundle));
-    if (!id) { id = await awaitConversationId(token); if (!id) throw new Error('ChatGPT did not start a conversation.'); }
-    const reply = await awaitReply(id, token, lastNode); // wait for the reply AFTER the previous turn's
-    lastNode = reply.node;
-    for (const u of parseEvidence(reply.text)) pooled.push({ ...u, id: `e${pooled.length + 1}` });
+  // Once the throwaway conversation exists it MUST be deleted on every exit path — a reply timeout on
+  // any later turn would otherwise leave it visible in the user's real ChatGPT history, breaking the
+  // "nothing is left behind" invariant. Delete before signaling done (the done message closes this
+  // tab, which would abort an in-flight delete), and delete on any failure before rethrowing.
+  try {
+    for (const batch of batches) {
+      const subBundle = { export: { ...bundle.export, conversations: batch }, idMap: bundle.idMap, capturedAt: bundle.capturedAt };
+      await submitPrompt(buildExtractionPrompt(subBundle));
+      if (!id) { id = await awaitConversationId(token, preTopId); if (!id) throw new Error('ChatGPT did not start a conversation.'); }
+      const reply = await awaitReply(id, token, lastNode); // wait for the reply AFTER the previous turn's
+      lastNode = reply.node;
+      for (const u of parseEvidence(reply.text)) pooled.push({ ...u, id: `e${pooled.length + 1}` });
+      notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
+    }
+    if (pooled.length === 0) throw new Error('ChatGPT returned no usable evidence from your history.');
+
+    await submitPrompt(buildSynthesisFromEvidence(pooled));
+    const synth = await awaitReply(id!, token, lastNode); lastNode = synth.node;
     notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
+
+    await submitPrompt(buildAuditPrompt());
+    const audit = await awaitReply(id!, token, lastNode);
+    notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
+
+    // 3. Delete the throwaway BEFORE signaling done, then combine and import.
+    await deleteConversation(id!, token);
+    const profile = await importGptReply(combineForImport(pooled, synth.text, audit.text));
+    notify({ type: 'aibadges:done', version: profile.version });
+    notify({ type: 'aibadges:cg-autorun-done', version: profile.version });
+  } catch (e) {
+    if (id) await deleteConversation(id, token); // clean up the throwaway even on failure/timeout
+    throw e;
   }
-  if (pooled.length === 0) throw new Error('ChatGPT returned no usable evidence from your history.');
-
-  await submitPrompt(buildSynthesisFromEvidence(pooled));
-  const synth = await awaitReply(id!, token, lastNode); lastNode = synth.node;
-  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
-
-  await submitPrompt(buildAuditPrompt());
-  const audit = await awaitReply(id!, token, lastNode);
-  await deleteConversation(id!, token);
-  notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
-
-  // 3. Combine (client-pooled evidence + profile + audited capability) and import.
-  const profile = await importGptReply(combineForImport(pooled, synth.text, audit.text));
-  notify({ type: 'aibadges:done', version: profile.version });
-  notify({ type: 'aibadges:cg-autorun-done', version: profile.version });
 }

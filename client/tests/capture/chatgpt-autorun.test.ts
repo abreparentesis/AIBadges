@@ -21,6 +21,12 @@ describe('parseEvidence (map step)', () => {
     expect(parseEvidence('{"evidence":[{"conversationId":"c1"}]}')).toHaveLength(0);
     expect(parseEvidence('not json at all')).toEqual([]);
   });
+
+  it('drops units with no conversationId (un-attributed quotes cannot be dated or de-duped)', () => {
+    const out = parseEvidence('{"evidence":[{"quote":"orphan"},{"conversationId":"c2","quote":"kept"}]}');
+    expect(out).toHaveLength(1);
+    expect(out[0].conversationId).toBe('c2');
+  });
 });
 
 describe('combineForImport (reduce step)', () => {
@@ -33,7 +39,10 @@ describe('combineForImport (reduce step)', () => {
     capability: { aiFluency: { delegation: { band: 'advanced', evidenceIds: ['e1', 'e2'] } }, yeggeStage: { stage: 6, evidenceIds: [] }, domains: [] },
   });
   const audit = JSON.stringify({
-    aiFluency: { delegation: { band: 'developing', evidenceIds: ['e1'] } },
+    aiFluency: {
+      delegation: { band: 'developing', evidenceIds: ['e1'] }, description: { band: 'proficient', evidenceIds: ['e2'] },
+      discernment: { band: 'emerging', evidenceIds: [] }, diligence: { band: 'emerging', evidenceIds: [] },
+    },
     domains: [{ name: 'x', band: 'developing', evidenceIds: ['e1'] }],
   });
 
@@ -50,6 +59,12 @@ describe('combineForImport (reduce step)', () => {
     const root = JSON.parse(combineForImport(pooled, synth, 'garbage'));
     expect(root.capability.aiFluency.delegation.band).toBe('advanced'); // fell back to the draft
     expect(root.evidence).toEqual(pooled);
+  });
+
+  it('rejects a partial audit (missing dimensions) and keeps the draft, not a band collapse', () => {
+    const partial = JSON.stringify({ aiFluency: { delegation: { band: 'developing', evidenceIds: ['e1'] } } }); // only 1 of 4
+    const root = JSON.parse(combineForImport(pooled, synth, partial));
+    expect(root.capability.aiFluency.delegation.band).toBe('advanced'); // draft kept; not collapsed to emerging
   });
 });
 
