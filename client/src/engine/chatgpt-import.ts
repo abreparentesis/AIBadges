@@ -149,7 +149,7 @@ export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: I
     }
   }
 
-  // ---- capability (optional AI-fluency 4D + stage; the AI Literacy tab renders it) ----
+  // ---- capability (optional AI-fluency 4D + stage; the AI Fluency Index tab renders it) ----
   let capability: Capability | undefined;
   const rc = root.capability;
   if (rc && typeof rc === 'object' && rc.aiFluency && typeof rc.aiFluency === 'object') {

@@ -2,7 +2,7 @@
 // the device beyond the user opening linkedin.com themselves.
 
 export function certName(stage: number | string): string {
-  return `AI Fluency - Stage ${stage}`;
+  return `AI Fluency Index - Stage ${stage}`;
 }
 
 export function buildAddToProfileUrl(o: { stage: number | string; computedAt: string; shareUrl: string; token: string }): string {

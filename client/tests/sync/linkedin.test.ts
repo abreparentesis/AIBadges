@@ -3,7 +3,7 @@ import { certName, buildAddToProfileUrl, buildShareOnLinkedInUrl, stageDrift } f
 
 describe('certName', () => {
   it('uses the exact credential wording', () => {
-    expect(certName(5)).toBe('AI Fluency - Stage 5');
+    expect(certName(5)).toBe('AI Fluency Index - Stage 5');
   });
 });
 
@@ -19,7 +19,7 @@ describe('buildAddToProfileUrl', () => {
     expect(params.get('startTask')).toBe('CERTIFICATION_NAME');
   });
   it('prefills name, org, dates, url, and id', () => {
-    expect(params.get('name')).toBe('AI Fluency - Stage 5');
+    expect(params.get('name')).toBe('AI Fluency Index - Stage 5');
     expect(params.get('organizationName')).toBe('AIBadges');
     expect(params.get('issueYear')).toBe('2026');
     expect(params.get('issueMonth')).toBe('7');

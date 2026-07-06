@@ -246,7 +246,7 @@ export default function App() {
 
       {tab === 'literacy' && !cap && (
         <div className="bb-card" style={{ marginTop: 24, color: t.g600 }}>
-          Your AI literacy levels aren&rsquo;t in this profile yet. Re-run profiling from the AIBadges popup to generate them.
+          Your AI Fluency Index isn&rsquo;t in this profile yet. Re-run profiling from the AIBadges popup to generate them.
         </div>
       )}
       {tab === 'literacy' && cap && (() => {
@@ -261,7 +261,7 @@ export default function App() {
         const atCeiling = cap.yeggeStage.stage >= CHAT_CEIL;
         return (
           <>
-            <div className="bb-eyebrow" style={{ color: t.blue }}>AI literacy</div>
+            <div className="bb-eyebrow" style={{ color: t.blue }}>AI Fluency Index</div>
             <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.01em', margin: '8px 0 6px' }}>How capably you operate</h1>
             <p className="bb-muted" style={{ fontSize: 16, margin: 0, maxWidth: 580 }}>
               An evidence-backed read of your AI-working maturity from your own {sourceLabel} history, across four fluency dimensions. This is a reflection, not a certification.
@@ -302,7 +302,7 @@ export default function App() {
                 </div>
                 <div style={{ fontSize: 12.5, color: t.g600, marginTop: 8, lineHeight: 1.5 }}>
                   {weakest.band !== 'advanced' && (
-                    <><b style={{ color: t.blue }}>Room to grow.</b> Your lowest fluency is <b>{weakest.label}</b> ({weakest.band}) &mdash; strengthening it is your clearest next step (see &ldquo;Grow your AI literacy&rdquo; below). </>
+                    <><b style={{ color: t.blue }}>Room to grow.</b> Your lowest fluency is <b>{weakest.label}</b> ({weakest.band}) &mdash; strengthening it is your clearest next step (see &ldquo;Grow your AI fluency&rdquo; below). </>
                   )}
                   {atCeiling
                     ? <>You&rsquo;re at the top of the range chat can measure (stage {CHAT_CEIL} of 8). </>
@@ -315,7 +315,7 @@ export default function App() {
 
             <SecH dot={t.blue} title="Your four fluencies" cap="AI-fluency · evidence-backed"
               toggle={sigFor('statBadge') && (
-                <Toggle label="AI literacy" pub={isPublic('statBadge')} busy={busy === 'statBadge'}
+                <Toggle label="AI Fluency Index" pub={isPublic('statBadge')} busy={busy === 'statBadge'}
                   onChange={(next) => toggle('statBadge', next)} />
               )} />
             {(() => {
@@ -373,7 +373,7 @@ export default function App() {
                 : <span className="bb-muted" style={{ fontSize: 13 }}>Make a section public to get a shareable link.</span>}
             </div>
 
-            <SecH dot={t.success} title="Grow your AI literacy" cap="personalized" />
+            <SecH dot={t.success} title="Grow your AI fluency" cap="personalized" />
             {steps.length === 0 ? (
               <div className="bb-muted">You&rsquo;re fluent across what your chats reveal. The next rung, Orchestrator, is directing agents and tools across multi-step work. Chat can&rsquo;t show it; it grows in agentic tools like Claude Code or Codex, and we&rsquo;d only score it from those sources.</div>
             ) : steps.map((s) => (
@@ -442,7 +442,7 @@ function Tabs({ tab, onPick }: { tab: Tab; onPick: (t: Tab) => void }) {
   return (
     <div style={{ display: 'flex', gap: 24, borderBottom: `1px solid ${t.g200}`, margin: '0 0 20px' }}>
       {item('personality', 'Personality')}
-      {item('literacy', 'AI Literacy')}
+      {item('literacy', 'AI Fluency Index')}
     </div>
   );
 }

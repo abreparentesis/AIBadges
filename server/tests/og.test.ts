@@ -12,7 +12,7 @@ describe('renderBadgeSvg', () => {
     expect(svg).toContain('<svg');
     expect(svg).toContain('width="1200"');
     expect(svg).toContain('height="627"');
-    expect(svg).toContain('AI Fluency - Stage 5');
+    expect(svg).toContain('AI Fluency Index - Stage 5');
     expect(svg).toContain('AIBADGES');
   });
 
@@ -26,7 +26,7 @@ describe('renderBadgeSvg', () => {
 
   it('degrades to the stage-only layout when bands are missing', () => {
     const svg = renderBadgeSvg({ yeggeStage: 3 });
-    expect(svg).toContain('AI Fluency - Stage 3');
+    expect(svg).toContain('AI Fluency Index - Stage 3');
     expect(svg).not.toContain('Delegation');
   });
 

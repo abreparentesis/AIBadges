@@ -5,7 +5,7 @@ Status: approved pending user review
 
 ## Goal
 
-Let a user put their AI Literacy result on LinkedIn in two forms: a permanent Licenses and Certifications entry on their profile, and a feed post with a personalized badge image. Scope is the AI Literacy section only. The credential name is exactly "AI Fluency - Stage N", with N from the statBadge signal's Yegge stage. A drift nudge tells the user when their published badge no longer matches their current profile.
+Let a user put their AI Literacy result on LinkedIn in two forms: a permanent Licenses and Certifications entry on their profile, and a feed post with a personalized badge image. Scope is the AI Literacy section only. The credential name is exactly "AI Fluency Index - Stage N" (product renamed from "AI Fluency" on 2026-07-06), with N from the statBadge signal's Yegge stage. A drift nudge tells the user when their published badge no longer matches their current profile.
 
 Decisions made during brainstorming:
 
@@ -23,7 +23,7 @@ New route `GET /og/:token.png` in `server/src/app.ts`:
 
 1. Resolve the token to its owner with the same lookup `/s/:token` uses (public signals only).
 2. Read the owner's public statBadge signal. Unknown token or statBadge not public: 404, matching the share page policy so the route is not an existence oracle.
-3. Fill an SVG template (1200x627) with the stage headline ("AI Fluency - Stage N"), AIBadges branding, and the four dimension bands (Delegation, Description, Discernment, Diligence) from `surfaced_json`. Missing band fields degrade to the stage-only layout.
+3. Fill an SVG template (1200x627) with the stage headline ("AI Fluency Index - Stage N"), AIBadges branding, and the four dimension bands (Delegation, Description, Discernment, Diligence) from `surfaced_json`. Missing band fields degrade to the stage-only layout.
 4. Rasterize with `@resvg/resvg-js`. The Inter font file ships with the server because the container has no system fonts.
 5. On any rasterization error: log and serve a bundled static fallback PNG with 200. A broken image on a LinkedIn post is worse than a generic one.
 6. `Cache-Control: public, max-age=300` so a re-publish propagates quickly without rendering per crawler hit.
@@ -38,7 +38,7 @@ In the AI Literacy tab of the results page (`client/entrypoints/results/App.tsx`
 
 ```
 https://www.linkedin.com/profile/add?startTask=CERTIFICATION_NAME
-  &name=AI Fluency - Stage N
+  &name=AI Fluency Index - Stage N
   &organizationName=AIBadges
   &issueYear=<from profile.computedAt>
   &issueMonth=<from profile.computedAt>

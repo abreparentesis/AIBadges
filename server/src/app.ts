@@ -90,7 +90,7 @@ function renderReportPage(
     </section>`;
   }
 
-  // AI Literacy — Yegge stage + the four aiFluency dimension bands.
+  // AI Fluency Index — Yegge stage + the four aiFluency dimension bands.
   let literacySection = '';
   if (statC) {
     const f = (statC.aiFluency ?? {}) as Record<string, unknown>;
@@ -104,7 +104,7 @@ function renderReportPage(
         <span class="vel">${esc(f[k])}</span>
       </div>`).join('');
     literacySection = `<section class="sec">
-      <div class="sech"><span class="dot" style="background:#0046ff"></span><h2>AI Literacy</h2></div>
+      <div class="sech"><span class="dot" style="background:#0046ff"></span><h2>AI Fluency Index</h2></div>
       <div class="hero">
         <div class="herocard">${renderCardBody('statBadge', statC)}</div>
         <div class="herosum">${rows}</div>

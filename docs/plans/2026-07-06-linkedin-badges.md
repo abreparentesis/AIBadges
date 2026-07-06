@@ -14,7 +14,7 @@
 
 - Toolchain is Bun in both `client/` and `server/` (`bun install`, `bun run`, `bun test` server-side, `bun run test` = vitest client-side).
 - Privacy invariant: no code path may send conversation text, quotes, or capture payloads to any server. This feature adds NO new client-to-server payloads.
-- Credential name is exactly `AI Fluency - Stage N` (hyphen, spaces as shown).
+- Credential name is exactly `AI Fluency Index - Stage N` (hyphen, spaces as shown; renamed 2026-07-06).
 - Badge image is 1200x627 PNG. OG route policy matches `/s/:token`: unknown or private = 404.
 - `certId` = the share token (constant across re-adds). `organizationName` = `AIBadges`.
 - Fluency band vocabulary: `emerging`, `developing`, `proficient`, `advanced` (see `BAND_RANK` in `client/entrypoints/results/App.tsx:219`).

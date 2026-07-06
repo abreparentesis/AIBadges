@@ -225,7 +225,7 @@ describe('share viewer (HTML)', () => {
   });
 });
 
-describe('AI Literacy (statBadge) share render', () => {
+describe('AI Fluency Index (statBadge) share render', () => {
   it('renders the Yegge stage and dimension bands when public', async () => {
     const app = makeApp();
     const res = await call(app, 'POST', '/v1/signals', {
@@ -241,13 +241,13 @@ describe('AI Literacy (statBadge) share render', () => {
     const page = await app.request(`/s/${token}`);
     expect(page.status).toBe(200);
     const html = await page.text();
-    expect(html).toContain('AI Literacy');
+    expect(html).toContain('AI Fluency Index');
     expect(html).toContain('Stage 5');
     expect(html).toContain('proficient');
     expect(html).toContain('advanced');
   });
 
-  it('does not render the AI Literacy section when statBadge is private', async () => {
+  it('does not render the AI Fluency Index section when statBadge is private', async () => {
     const app = makeApp();
     const res = await call(app, 'POST', '/v1/signals', {
       key: 'kal2', invite: INVITE,
@@ -264,7 +264,7 @@ describe('AI Literacy (statBadge) share render', () => {
 
     const page = await app.request(`/s/${typeToken}`);
     const html = await page.text();
-    expect(html).not.toContain('AI Literacy');
+    expect(html).not.toContain('AI Fluency Index');
     expect(html).not.toContain('Stage 5');
   });
 });

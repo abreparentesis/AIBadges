@@ -92,8 +92,8 @@ export function renderBadgeSvg(content: StatBadgeContent): string {
   <rect x="38" y="38" width="1124" height="551" fill="none" stroke="${PURPLE}" stroke-width="0.75"/>
   <text x="600" y="106" text-anchor="middle" font-family="Inter" font-size="23" font-weight="bold" letter-spacing="6" fill="${INK}">&#9679; AIBADGES</text>
   <line x1="470" y1="140" x2="730" y2="140" stroke="${HAIRLINE}" stroke-width="1"/>
-  <text x="600" y="196" text-anchor="middle" font-family="Inter" font-size="19" letter-spacing="5" fill="${PURPLE}">AI FLUENCY CREDENTIAL</text>
-  <text x="600" y="292" text-anchor="middle" font-family="Besley" font-size="76" font-weight="bold" fill="${INK}">AI Fluency - Stage ${stage}</text>
+  <text x="600" y="196" text-anchor="middle" font-family="Inter" font-size="19" letter-spacing="5" fill="${PURPLE}">CREDENTIAL</text>
+  <text x="600" y="290" text-anchor="middle" font-family="Besley" font-size="66" font-weight="bold" fill="${INK}">AI Fluency Index - Stage ${stage}</text>
   <text x="600" y="342" text-anchor="middle" font-family="Inter" font-size="22" fill="${MUTED}">${subline}</text>
 ${dimensions}
   <line x1="120" y1="${provenanceY - 34}" x2="944" y2="${provenanceY - 34}" stroke="${HAIRLINE}" stroke-width="1"/>
