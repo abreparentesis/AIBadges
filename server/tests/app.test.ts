@@ -186,7 +186,7 @@ describe('share viewer (HTML)', () => {
     expect(page.headers.get('content-type')).toContain('text/html');
     const html = await page.text();
     expect(html).toContain('Decomposes before acting');
-    expect(html).toContain('AIBadges');
+    expect(html).toContain('AI Fluency Index');
     expect(html).toContain('How you think');
 
     const missing = await app.request('/s/does-not-exist');

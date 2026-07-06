@@ -1,6 +1,6 @@
 import { importGptReply } from '../run/import-chatgpt';
 
-// In-page bridge: prefill the ChatGPT composer with the AIBadges prompt+data, submit it, then read
+// In-page bridge: prefill the ChatGPT composer with the AI Fluency Index prompt+data, submit it, then read
 // the finished reply from the DOM and import it. Submit is automatic: we click ChatGPT's own send
 // button, so ChatGPT's frontend computes the sentinel/Turnstile token and issues the request from the
 // user's own logged-in session (a scripted click still fires ChatGPT's send handler). If a challenge
@@ -140,7 +140,7 @@ export function runBridge(prompt: string, notify: Notify): void {
     const showManual = () => {
       if (manualShown) return;
       manualShown = true;
-      showHint('AIBadges filled your message. Review it, then press Enter to run. We will read the result automatically.');
+      showHint('AI Fluency Index filled your message. Review it, then press Enter to run. We will read the result automatically.');
     };
 
     const stop = () => { obs.disconnect(); window.clearInterval(poll); };
@@ -151,17 +151,17 @@ export function runBridge(prompt: string, notify: Notify): void {
         notify({ type: 'aibadges:done', version: profile.version });
         notify({ type: 'aibadges:cg-bridge-done', version: profile.version });
         notify({ type: 'aibadges:open-results' });
-        showHint('Your AIBadges profile is ready. Opening it…', 'success');
+        showHint('Your AI Fluency Index profile is ready. Opening it…', 'success');
         clearHintLater(6000);
       } catch (e) {
         notify({ type: 'aibadges:cg-bridge-error', error: String((e as Error)?.message ?? e) });
-        showHint('AIBadges could not read that reply. Open the AIBadges page and paste it manually.', 'error');
+        showHint('AI Fluency Index could not read that reply. Open the AI Fluency Index page and paste it manually.', 'error');
         clearHintLater(9000);
       }
     };
     const giveUp = () => {
       notify({ type: 'aibadges:cg-bridge-error', error: 'Timed out waiting for a reply. Use the manual paste option below.' });
-      showHint('AIBadges timed out waiting for a reply.', 'error'); clearHintLater(8000);
+      showHint('AI Fluency Index timed out waiting for a reply.', 'error'); clearHintLater(8000);
     };
 
     const check = () => {
@@ -200,7 +200,7 @@ export function runBridge(prompt: string, notify: Notify): void {
     const trySubmit = () => {
       if (done) return;
       if (hasChallenge()) { showManual(); return; }
-      if (clickSend()) { autoSubmittedAt = Date.now(); showHint('AIBadges is running your analysis in ChatGPT…'); return; }
+      if (clickSend()) { autoSubmittedAt = Date.now(); showHint('AI Fluency Index is running your analysis in ChatGPT…'); return; }
       if (++sendTries > 8) { showManual(); return; } // ~2.4s of retrying, then hand off to the user
       window.setTimeout(trySubmit, 300);
     };

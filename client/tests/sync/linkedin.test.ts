@@ -20,7 +20,7 @@ describe('buildAddToProfileUrl', () => {
   });
   it('prefills name, org, dates, url, and id', () => {
     expect(params.get('name')).toBe('AI Fluency Index - Stage 5');
-    expect(params.get('organizationName')).toBe('AIBadges');
+    expect(params.get('organizationName')).toBe('AI Fluency Index');
     expect(params.get('issueYear')).toBe('2026');
     expect(params.get('issueMonth')).toBe('7');
     expect(params.get('certUrl')).toBe('https://aibadges-api.mindmaterial.io/s/tok123');

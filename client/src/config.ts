@@ -9,7 +9,7 @@ export const INVITE_TOKEN = (import.meta.env.WXT_AIBADGES_INVITE as string | und
 
 export const shareUrl = (token: string) => `${BACKEND_URL}/s/${token}`;
 
-// The AIBadges Custom GPT that free ChatGPT users run their own capture through. Overridable via
+// The AI Fluency Index Custom GPT that free ChatGPT users run their own capture through. Overridable via
 // build env so the GPT can be reissued without a code change.
 export const CHATGPT_GPT_URL =
   (import.meta.env.WXT_AIBADGES_GPT_URL as string | undefined) ??

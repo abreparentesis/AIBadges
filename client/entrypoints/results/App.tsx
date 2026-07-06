@@ -72,7 +72,7 @@ export default function App() {
   // evidence stay on-device; flipping the local signals to private mirrors the server state.
   async function deleteServerData() {
     if (busy) return; // one server mutation at a time; a racing share-toggle could resurrect data mid-delete
-    if (!confirm('Delete your badge data from the AIBadges server? Your profile stays on this device, but share links will stop working.')) return;
+    if (!confirm('Delete your badge data from the AI Fluency Index server? Your profile stays on this device, but share links will stop working.')) return;
     setBusy('delete-server');
     try {
       const userKey = await ensureUserKey(kv);
@@ -139,7 +139,7 @@ export default function App() {
 
   if (!profile) {
     return <Shell><div className="bb-card" style={{ textAlign: 'center', color: t.g600 }}>
-      No profile yet. Open the AIBadges popup and run <b style={{ color: t.g900 }}>profiling</b>.</div></Shell>;
+      No profile yet. Open the AI Fluency Index popup and run <b style={{ color: t.g900 }}>profiling</b>.</div></Shell>;
   }
 
   const ty = profile.type;
@@ -246,7 +246,7 @@ export default function App() {
 
       {tab === 'literacy' && !cap && (
         <div className="bb-card" style={{ marginTop: 24, color: t.g600 }}>
-          Your AI Fluency Index isn&rsquo;t in this profile yet. Re-run profiling from the AIBadges popup to generate them.
+          Your AI Fluency Index isn&rsquo;t in this profile yet. Re-run profiling from the AI Fluency Index popup to generate them.
         </div>
       )}
       {tab === 'literacy' && cap && (() => {
@@ -416,7 +416,7 @@ function HoloCard({ type }: { type: NonNullable<Profile['type']> }) {
   const axes = (['EI', 'SN', 'TF', 'JP'] as const).map((k) => ({ word: AXIS_WORD[type.axes[k].letter] ?? type.axes[k].letter, lean: type.axes[k].lean }));
   return (
     <div className="holo" data-group={meta.group}>
-      <div className="top"><span>● AIBADGES</span><span className="rar">{meta.group.replace(/s$/, '').toUpperCase()}</span></div>
+      <div className="top"><span>● AI FLUENCY INDEX</span><span className="rar">{meta.group.replace(/s$/, '').toUpperCase()}</span></div>
       <div className="code">{type.code}</div>
       <div className="nm">{meta.name}</div>
       <div className="grp"><span className="gdot" />{meta.group}</div>
@@ -425,7 +425,7 @@ function HoloCard({ type }: { type: NonNullable<Profile['type']> }) {
           <div key={i}><div className="sl"><span>{a.word}</span><b>{a.lean}</b></div><div className="hbar"><i style={{ width: `${a.lean}%` }} /></div></div>
         ))}
       </div>
-      <div className="hfoot"><span>AIBadges</span><span>behavioral · no quiz</span></div>
+      <div className="hfoot"><span>AI Fluency Index</span><span>behavioral · no quiz</span></div>
     </div>
   );
 }
@@ -451,7 +451,7 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <div style={{ minHeight: '100vh', background: t.white }}>
       <div style={{ borderBottom: `1px solid ${t.g200}`, height: 60, display: 'flex', alignItems: 'center', padding: '0 24px' }}>
-        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em', color: t.g900 }}>AIBadges</span>
+        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em', color: t.g900 }}>AI Fluency Index</span>
         <span style={{ marginLeft: 12, paddingLeft: 12, borderLeft: `1px solid ${t.g200}`, color: t.g600, fontSize: 14 }}>living profile</span>
       </div>
       <main style={{ maxWidth: 860, margin: '0 auto', padding: '34px 24px 60px' }}>{children}</main>

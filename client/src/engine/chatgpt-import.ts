@@ -3,7 +3,7 @@ import { assembleProfile } from './assemble';
 import type { CaptureBundle } from '../capture/chatgpt-export';
 import type { Profile, EvidenceUnit, Claim, Trajectory, CognitiveType, Confidence, Capability } from './types';
 
-// The AIBadges Custom GPT is the user's own model, configured by hand — so its reply shape varies.
+// The AI Fluency Index Custom GPT is the user's own model, configured by hand — so its reply shape varies.
 // We've seen two shapes in the wild: the canonical {thinking, trajectory:{shifts}, type, evidence},
 // and a richer {assessments:{thinking_style, dominant_request_patterns, communication_style,
 // workflows_and_tools, trajectory_shifts}, evidence}. This importer accepts both (plus snake_case
@@ -46,7 +46,7 @@ function parseLoose(raw: string): unknown {
   }
 }
 
-// Map a pasted AIBadges-GPT result back to a Profile, joining its evidence to the captured export
+// Map a pasted AI Fluency Index-GPT result back to a Profile, joining its evidence to the captured export
 // (by conversationId) to recover real timestamps and conversation ids, then running the shared
 // anchoring/grading engine. Throws GptImportError when the paste yields nothing usable.
 export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: ImportOpts): Profile {

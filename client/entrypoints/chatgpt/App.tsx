@@ -114,7 +114,7 @@ export default function App() {
         <div className="bb-card" style={{ marginTop: 24 }}>
           <div style={{ fontWeight: 500, fontSize: 17, marginBottom: 6 }}>No capture yet</div>
           <p className="bb-muted" style={{ margin: '0 0 4px', lineHeight: 1.55 }}>
-            Open <b style={{ color: t.g900 }}>chatgpt.com</b> (signed in), click the AIBadges icon, and choose
+            Open <b style={{ color: t.g900 }}>chatgpt.com</b> (signed in), click the AI Fluency Index icon, and choose
             <b style={{ color: t.g900 }}> Capture my ChatGPT history</b>. Then come back to this page.
           </p>
         </div>
@@ -166,7 +166,7 @@ export default function App() {
           <details style={{ marginTop: 16 }}>
             <summary style={{ cursor: 'pointer', fontSize: 14, color: t.g600, fontWeight: 500 }}>Prefer to do it manually?</summary>
 
-            <Step n={1} title="Send your conversations to the AIBadges GPT" accent={t.g500}>
+            <Step n={1} title="Send your conversations to the AI Fluency Index GPT" accent={t.g500}>
               <p className="bb-muted" style={{ margin: '0 0 14px', lineHeight: 1.55 }}>
                 Copy the data or download the file, open the GPT, and paste/upload it as your first message.
               </p>
@@ -174,7 +174,7 @@ export default function App() {
                 <button className="bb-btn bb-btn-secondary" onClick={copyData}>{copied ? 'Copied ✓' : 'Copy data'}</button>
                 <button className="bb-btn bb-btn-secondary" onClick={downloadData}>Download .json</button>
                 <a className="bb-btn bb-btn-secondary" href={CHATGPT_GPT_URL} target="_blank" rel="noreferrer"
-                  style={{ textDecoration: 'none', display: 'inline-block' }}>Open the AIBadges GPT ↗</a>
+                  style={{ textDecoration: 'none', display: 'inline-block' }}>Open the AI Fluency Index GPT ↗</a>
               </div>
             </Step>
 
@@ -229,7 +229,7 @@ function Shell({ children }: { children: ReactNode }) {
   return (
     <div style={{ minHeight: '100vh', background: t.white }}>
       <div style={{ borderBottom: `1px solid ${t.g200}`, height: 60, display: 'flex', alignItems: 'center', padding: '0 24px' }}>
-        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em', color: t.g900 }}>AIBadges</span>
+        <span style={{ fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em', color: t.g900 }}>AI Fluency Index</span>
         <span style={{ marginLeft: 12, paddingLeft: 12, borderLeft: `1px solid ${t.g200}`, color: t.g600, fontSize: 14 }}>living profile</span>
       </div>
       <main style={{ maxWidth: 760, margin: '0 auto', padding: '34px 24px 60px' }}>{children}</main>

@@ -124,7 +124,7 @@ export class InSessionClaudeCaller implements ModelCaller {
       const createRes = await this.fetchFn(
         `${BASE}/organizations/${encodeURIComponent(this.orgId)}/chat_conversations`,
         { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' },
-          signal: ctrl.signal, body: JSON.stringify({ uuid: convId, name: 'AIBadges analysis (safe to delete)' }) },
+          signal: ctrl.signal, body: JSON.stringify({ uuid: convId, name: 'AI Fluency Index analysis (safe to delete)' }) },
       );
       if (!createRes.ok) {
         return { ok: false, status: createRes.status, phase: 'scratch conversation create', res: createRes, body: await createRes.text().catch(() => '') };

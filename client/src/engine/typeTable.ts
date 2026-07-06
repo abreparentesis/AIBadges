@@ -1,4 +1,4 @@
-// 16-type metadata. Names are AIBadges' own (deliberately NOT the 16Personalities set), the
+// 16-type metadata. Names are AI Fluency Index' own (deliberately NOT the 16Personalities set), the
 // 4-letter codes + the four temperament groups are the public-domain Jungian framework, and the
 // group colors evoke the familiar scheme while staying on the app palette.
 export type TypeGroup = 'Analysts' | 'Diplomats' | 'Sentinels' | 'Explorers';

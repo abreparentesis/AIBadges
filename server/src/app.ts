@@ -40,7 +40,7 @@ export function renderCardBody(type: string, content: Record<string, unknown>): 
       return `<div class="ax"><div class="axl"><span>${esc(WORD[String(a.letter)] ?? a.letter ?? '')}</span><b>${lean}</b></div><div class="bar"><i style="width:${lean}%"></i></div></div>`;
     }).join('');
     return `<div class="holo" style="--col:${esc(col)}">
-      <div class="htop"><span>● AIBADGES</span><span class="rar">${esc(String(content.group ?? '').replace(/s$/, '').toUpperCase())}</span></div>
+      <div class="htop"><span>● AI FLUENCY INDEX</span><span class="rar">${esc(String(content.group ?? '').replace(/s$/, '').toUpperCase())}</span></div>
       <div class="hcode">${esc(content.code ?? '?')}</div>
       <div class="hname">${esc(content.name ?? '')}</div>
       <div class="hgrp">${esc(content.group ?? '')}</div>
@@ -69,8 +69,8 @@ function renderReportPage(
   const og = typeC
     ? `<meta property="og:title" content="I'm ${esc(typeC.code ?? '')} — ${esc(typeC.name ?? '')}">
 <meta property="og:description" content="${esc(typeC.summary ?? 'My cognitive profile, computed from my own AI chats.')}">
-<meta property="og:site_name" content="AIBadges">`
-    : `<meta property="og:title" content="AIBadges profile">`;
+<meta property="og:site_name" content="AI Fluency Index">`
+    : `<meta property="og:title" content="AI Fluency Index profile">`;
 
   const ogImage = ogImageUrl
     ? `<meta property="og:image" content="${esc(ogImageUrl)}">
@@ -153,7 +153,7 @@ function renderReportPage(
   }
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>AIBadges profile</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Fluency Index profile</title>
 ${og}
 ${ogImage}
 <style>
@@ -224,7 +224,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--g200);font-si
 @media (max-width:560px){.grid2{grid-template-columns:1fr}}
 </style></head>
 <body>
-<div class="topbar"><span class="mark">AIBadges</span><span class="sub">living profile</span></div>
+<div class="topbar"><span class="mark">AI Fluency Index</span><span class="sub">living profile</span></div>
 <main>${typeSection}${literacySection}${thinkingSection}${trajSection}</main>
 <footer>${esc(provenance)} Public-domain Jungian dichotomies (E/I, S/N, T/F, J/P). Not affiliated with or derived from the Myers-Briggs Type Indicator® or The Myers-Briggs Company.</footer>
 </body></html>`;

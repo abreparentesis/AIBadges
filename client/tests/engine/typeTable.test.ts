@@ -14,7 +14,7 @@ describe('lookupType', () => {
   it('falls back gracefully for an unknown code', () => {
     expect(lookupType('ZZZZ').name).toBe('Undetermined');
   });
-  it("uses AIBadges' own names, not the 16Personalities set", () => {
+  it("uses AI Fluency Index' own names, not the 16Personalities set", () => {
     const blocked = ['Architect', 'Logician', 'Commander', 'Debater', 'Advocate', 'Mediator', 'Protagonist', 'Campaigner', 'Logistician', 'Defender', 'Executive', 'Consul', 'Virtuoso', 'Adventurer', 'Entrepreneur', 'Entertainer'];
     const codes = ['INTJ', 'INTP', 'ENTJ', 'ENTP', 'INFJ', 'INFP', 'ENFJ', 'ENFP', 'ISTJ', 'ISFJ', 'ESTJ', 'ESFJ', 'ISTP', 'ISFP', 'ESTP', 'ESFP'];
     for (const c of codes) expect(blocked).not.toContain(lookupType(c).name);

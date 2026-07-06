@@ -4,7 +4,7 @@ Everything to paste into the developer dashboard (https://chrome.google.com/webs
 
 ## Single purpose description
 
-> AIBadges turns the user's own AI chat history (claude.ai, chatgpt.com) into a private, evidence-backed profile of how they think and work with AI, with optional shareable badges. All analysis runs through the user's own AI provider session; raw chats never leave the provider or the user's device.
+> AI Fluency Index turns the user's own AI chat history (claude.ai, chatgpt.com) into a private, evidence-backed profile of how they think and work with AI, with optional shareable badges. All analysis runs through the user's own AI provider session; raw chats never leave the provider or the user's device.
 
 ## Permission justifications
 
@@ -57,7 +57,7 @@ Short description (under 132 characters):
 
 Detailed description:
 
-> AIBadges reads your own conversation history on claude.ai or chatgpt.com and asks your own AI to analyze it. The result is a living profile of how you think and work with AI: behavioral claims, a cognitive type, and a trajectory over time, each anchored to the exact quotes that back it.
+> AI Fluency Index reads your own conversation history on claude.ai or chatgpt.com and asks your own AI to analyze it. The result is a living profile of how you think and work with AI: behavioral claims, a cognitive type, and a trajectory over time, each anchored to the exact quotes that back it.
 >
 > The privacy model is the point. The analysis runs inside your own logged-in AI session, so the only party that ever processes your raw chats is the provider that already holds them. The full profile, quotes included, is stored on your device, where you can audit every claim against its evidence. If you sync or share, only the distilled badge crosses the network. Our servers never see a single message of your chats.
 >

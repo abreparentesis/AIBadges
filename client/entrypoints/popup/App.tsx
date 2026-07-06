@@ -47,7 +47,7 @@ export default function App() {
   return (
     <div style={{ width: 324, padding: 18, fontFamily: 'Inter, system-ui, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 16 }}>
-        <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em', color: t.g900 }}>AIBadges</span>
+        <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em', color: t.g900 }}>AI Fluency Index</span>
         {active != null && <ProviderTabs active={active} onPick={setOverride} />}
       </div>
       {active == null ? <div style={{ fontSize: 13, color: t.g500 }}>Loading…</div>

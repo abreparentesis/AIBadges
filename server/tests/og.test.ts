@@ -13,7 +13,7 @@ describe('renderBadgeSvg', () => {
     expect(svg).toContain('width="1200"');
     expect(svg).toContain('height="627"');
     expect(svg).toContain('AI Fluency Index - Stage 5');
-    expect(svg).toContain('AIBADGES');
+    expect(svg).toContain('AI FLUENCY INDEX');
   });
 
   it('renders one labelled bar per fluency dimension', () => {

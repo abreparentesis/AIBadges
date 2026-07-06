@@ -9,10 +9,10 @@ export default defineBackground(() => {
     chrome.action.setBadgeTextColor?.({ color: '#ffffff' });
     chrome.action.setTitle({ title });
   };
-  const idle = () => setBadge('●', '#0046ff', 'AIBadges — click to profile your Claude history');
-  const running = () => setBadge('●', '#f5a623', 'AIBadges — profiling your Claude history…');
-  const done = () => setBadge('●', '#12b76a', 'AIBadges — your profile is ready (click to open)');
-  const error = () => setBadge('!', '#d92d20', 'AIBadges — profiling failed (click to retry)');
+  const idle = () => setBadge('●', '#0046ff', 'AI Fluency Index — click to profile your Claude history');
+  const running = () => setBadge('●', '#f5a623', 'AI Fluency Index — profiling your Claude history…');
+  const done = () => setBadge('●', '#12b76a', 'AI Fluency Index — your profile is ready (click to open)');
+  const error = () => setBadge('!', '#d92d20', 'AI Fluency Index — profiling failed (click to retry)');
 
   // Generous interval: a backgrounded Claude.ai tab throttles its heartbeat to ~once a
   // minute, and a single completion can back off for a while, so a short window produced
@@ -125,7 +125,7 @@ export default defineBackground(() => {
         chrome.storage.local.set({ 'aibadges:status': 'running', 'aibadges:startedAt': Date.now(), 'aibadges:progress': null });
         blink = true; running(); arm(); break;
       case 'aibadges:progress':
-        blink = !blink; setBadge(blink ? '●' : '', '#f5a623', 'AIBadges — profiling your Claude history…'); arm(); break;
+        blink = !blink; setBadge(blink ? '●' : '', '#f5a623', 'AI Fluency Index — profiling your Claude history…'); arm(); break;
       case 'aibadges:phase':
         chrome.storage.local.set({ 'aibadges:progress': { phase: msg.phase, done: msg.done, total: msg.total } }); arm(); break;
       case 'aibadges:done':

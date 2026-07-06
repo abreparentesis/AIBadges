@@ -10,7 +10,7 @@ export function buildAddToProfileUrl(o: { stage: number | string; computedAt: st
   const params = new URLSearchParams({
     startTask: 'CERTIFICATION_NAME',
     name: certName(o.stage),
-    organizationName: 'AIBadges',
+    organizationName: 'AI Fluency Index',
     issueYear: String(d.getUTCFullYear()),
     issueMonth: String(d.getUTCMonth() + 1),
     certUrl: o.shareUrl,

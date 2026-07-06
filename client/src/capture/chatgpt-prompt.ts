@@ -25,8 +25,9 @@ const SYNTHESIS_STEPS = [
   '- description = how clearly they prompt: an explicit goal, constraints, and often a requested output format. This is the ONLY dimension where ordinary context-giving belongs, but advanced description shows real structure — a clear goal with genuine constraints, usually a requested output format — not sheer volume; raw context dumps with no stated goal or constraints are at most developing.',
   '- discernment = the person REACTING TO the model\'s output: correcting it, disagreeing, rejecting or redoing a weak answer, catching an error, narrowing an over-broad reply. The quote must show a judgment of what the AI produced. Stating one\'s own facts, opinions, or preferences is NOT discernment.',
   '- diligence = verifying what the AI GAVE before acting on it: checking or challenging its sources or answer, cross-checking a claim it made, testing its output, or iterating to fix a flaw it produced. Hardest to see in chat, and a first-message request for sources or ordinary re-prompting is NOT diligence (it would read the same to a human given no prior answer). If the quotes do not actually show verification of the model\'s output, score it emerging or developing and cite only truly relevant quotes (or []); do not pad it.',
-  'A band is earned by DEMONSTRATING evidence weight: advanced needs several clear examples across different conversations, proficient at least a couple, a single or ambiguous quote supports at most developing; when torn between two bands choose the LOWER and never inflate. Use emerging/developing whenever the demonstrating evidence is genuinely thin.',
-  'SELF-AUDIT before you output aiFluency: re-read every quote you cited under each dimension and DELETE any that, read alone, does not show that dimension\'s specific engagement with the AI. Apply a concrete test — for discernment or diligence the surviving quote MUST point to something the AI said or produced (if you cannot name the AI output it reacts to or checks, delete it); for delegation the quote MUST contain the actual handed-off task, not merely its topic. Then set each band to what the SURVIVING quotes support; if a dimension is left with 0-1 genuine quotes it is emerging or developing.',
+  'Score each band from the OVERALL PATTERN across the whole history, NOT the number of quotes. Ladder: emerging = essentially no sign of the skill; developing = only occasional or shallow instances (rejecting a suggestion, refining a request, a one-line fix), even if there are several; proficient = a regular, substantive pattern across different conversations; advanced = a defining, SOPHISTICATED pattern that recurs (for discernment, e.g., catching subtle errors, challenging the model\'s reasoning, or re-framing its approach — never a handful of shallow reactions). A few lousy, short, or ambiguous quotes NEVER earn proficient or advanced, however many there are; when torn choose the LOWER.',
+  'For EACH dimension also write a one-sentence "note": the actual recurring pattern that earns the band, in plain terms (e.g. "regularly challenges the model\'s reasoning and asks it to redo weak answers"). The band MUST match the note — if you cannot describe a genuinely sophisticated, recurring pattern, it is not advanced; if you cannot describe a real pattern at all, it is emerging or developing.',
+  'SELF-AUDIT before you output aiFluency, in two passes. (1) Per quote: delete every cited quote that, read alone, does not show that dimension\'s specific engagement with the AI — for discernment/diligence the quote MUST point to something the AI said or produced (if you cannot name the AI output it reacts to or checks, delete it); for delegation it MUST contain the actual handed-off task, not its topic. (2) Holistic: step back and look at the SURVIVING quotes as a whole — if the pattern is shallow, sparse, or ambiguous, LOWER the band and rewrite the note to match. Advanced and proficient must be earned by the pattern, not by the count.',
   'Fill yeggeStage too, but keep it light: the overall stage is recomputed from your four bands afterward, so just give your rough 1-6 read (chat cannot evidence the 7-8 tier, which is orchestrating autonomous agents and tools). List only domains the evidence supports.',
 ].join('\n');
 
@@ -40,7 +41,7 @@ const SCALE_NOTE = 'lean is 50-100 and should track how strongly the evidence le
 const SHAPE_THINKING = '"thinking":[{"claim":"...","evidenceIds":["e1"],"confidence":"low|medium|high"}]';
 const SHAPE_TRAJ = '"trajectory":{"shifts":[{"dimension":"...","direction":"rising|falling|steady","velocity":"slow|moderate|fast","evidenceIds":["e1"]}]}';
 const SHAPE_TYPE = '"type":{"code":"INTJ","summary":"...","confidence":"low|medium|high","axes":{"EI":{"letter":"I","lean":70,"evidenceIds":["e1"]},"SN":{"letter":"N","lean":60,"evidenceIds":[]},"TF":{"letter":"T","lean":75,"evidenceIds":[]},"JP":{"letter":"J","lean":60,"evidenceIds":[]}}}';
-const SHAPE_CAP = '"capability":{"aiFluency":{"delegation":{"band":"proficient","evidenceIds":["e1"]},"description":{"band":"advanced","evidenceIds":[]},"discernment":{"band":"developing","evidenceIds":[]},"diligence":{"band":"developing","evidenceIds":[]}},"yeggeStage":{"stage":5,"evidenceIds":[]},"domains":[{"name":"...","band":"proficient","evidenceIds":[]}]}';
+const SHAPE_CAP = '"capability":{"aiFluency":{"delegation":{"band":"proficient","note":"one-sentence pattern that earns this band","evidenceIds":["e1"]},"description":{"band":"advanced","note":"...","evidenceIds":[]},"discernment":{"band":"developing","note":"...","evidenceIds":[]},"diligence":{"band":"developing","note":"...","evidenceIds":[]}},"yeggeStage":{"stage":5,"evidenceIds":[]},"domains":[{"name":"...","band":"proficient","evidenceIds":[]}]}';
 const SHAPE_EVIDENCE = '"evidence":[{"id":"e1","conversationId":"c1","quote":"...","summary":"...","type":"decision|reasoning_move|episode|preference"}]';
 
 const SYNTH_SHAPE = `{${SHAPE_THINKING},\n ${SHAPE_TRAJ},\n ${SHAPE_TYPE},\n ${SHAPE_CAP}}`;
@@ -48,7 +49,7 @@ const FULL_SHAPE = `{${SHAPE_THINKING},\n ${SHAPE_TRAJ},\n ${SHAPE_TYPE},\n ${SH
 
 // Single message (manual bridge fallback): full profile + evidence in one reply.
 export const BRIDGE_INSTRUCTIONS = [
-  'You are AIBadges. Below is one JSON object describing a person\'s own ChatGPT history, with this shape:',
+  'You are AI Fluency Index. Below is one JSON object describing a person\'s own ChatGPT history, with this shape:',
   INPUT_SHAPE, '',
   'Produce an honest, evidence-grounded behavioral profile of this person, judged only from what they actually wrote. Be a critical mirror, not flattering. Never invent.', '',
   EVIDENCE_RULES, '',
@@ -68,7 +69,7 @@ export function buildBridgePrompt(bundle: CaptureBundle): string {
 // starves itself into reusing a few quotes) and keeps each reply short enough to avoid truncation.
 export function buildExtractionPrompt(bundle: CaptureBundle): string {
   return [
-    'You are AIBadges (step 1 of 3: EVIDENCE EXTRACTION). Below is one JSON object describing a person\'s own ChatGPT history, with this shape:',
+    'You are AI Fluency Index (step 1 of 3: EVIDENCE EXTRACTION). Below is one JSON object describing a person\'s own ChatGPT history, with this shape:',
     INPUT_SHAPE, '',
     `From what the person actually wrote, ${EXTRACTION_STEP} Be a critical mirror, never invent.`, '',
     EVIDENCE_RULES, '',
@@ -120,9 +121,9 @@ const AUDIT_RULES = [
   '- description: keep only real prompt structure (a goal WITH constraints, often a requested output format). DELETE terse context fragments and ordinary one-line questions ("Private, with monthly rent", "24h - no security", "in Spanish") — supplying a fact or answering the AI\'s clarifying question is not advanced prompting.',
   '- discernment: keep only quotes that REACT TO the AI\'s output (correct it, reject it, narrow it, catch an error). DELETE the person\'s own facts, opinions, preferences, or fresh questions.',
   '- diligence: keep only quotes that verify what the AI GAVE (challenge a source it cited, cross-check a claim it made, test its output). DELETE fresh factual questions and one-word asks ("Validate", "does income tax rise with income?").',
-  'Then RE-BAND each dimension STRICTLY by what survives: 0 quotes → emerging, 1 → developing, 2 → proficient, 3+ across 2+ different conversations → advanced. When in doubt choose the LOWER band; keep a high band only if the surviving quotes plainly earn it. Audit domains the same way.',
+  'Then RE-BAND each dimension from the OVERALL PATTERN of what survives, not the count: step back and judge the surviving quotes as a whole. A few shallow, short, or ambiguous quotes are developing at most — advanced and proficient require a genuinely SOPHISTICATED, recurring pattern (e.g. discernment: catching subtle errors or challenging the model\'s reasoning, not merely rejecting a suggestion or refining a request). When in doubt choose the LOWER band. For each dimension write a one-sentence "note" stating the pattern that earns the band; the band MUST match the note. Audit domains the same way.',
 ].join('\n');
-const AUDIT_SHAPE = '{"aiFluency":{"delegation":{"band":"emerging|developing|proficient|advanced","evidenceIds":["e1"]},"description":{...},"discernment":{...},"diligence":{...}},"domains":[{"name":"...","band":"...","evidenceIds":["e1"]}]}';
+const AUDIT_SHAPE = '{"aiFluency":{"delegation":{"band":"emerging|developing|proficient|advanced","note":"pattern that earns this band","evidenceIds":["e1"]},"description":{...},"discernment":{...},"diligence":{...}},"domains":[{"name":"...","band":"...","evidenceIds":["e1"]}]}';
 
 export const AUDIT_PROMPT = [
   'Step 3 of 3: EVIDENCE AUDIT.',

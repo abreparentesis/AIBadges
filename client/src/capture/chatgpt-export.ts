@@ -1,6 +1,6 @@
 import type { RawConversation } from './types';
 
-// The payload the user hands to the AIBadges Custom GPT. Conversations get short synthetic ids
+// The payload the user hands to the AI Fluency Index Custom GPT. Conversations get short synthetic ids
 // (c1, c2, ...) instead of the real ChatGPT UUIDs: the GPT is asked to cite a conversationId in
 // its evidence, and short ids are easier for it to echo correctly and keep the real ids off the
 // third party. The real id stays on-device in `idMap` so imported evidence can resolve back to it.

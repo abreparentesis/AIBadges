@@ -1,8 +1,8 @@
-# AIBadges privacy policy
+# AI Fluency Index privacy policy
 
 Last updated: July 6, 2026
 
-AIBadges is a browser extension that turns your own AI chat history into a profile of how you think and work with AI, plus badges you can choose to share. This policy explains what data the extension touches, where it is processed, and what (little) ever leaves your device.
+AI Fluency Index is a browser extension that turns your own AI chat history into a profile of how you think and work with AI, plus badges you can choose to share. This policy explains what data the extension touches, where it is processed, and what (little) ever leaves your device.
 
 The short version: your chats are analyzed by the AI provider you already use, inside your own logged-in session. The full profile, including verbatim quotes from your chats, stays on your device. Our server only ever receives the distilled badge.
 
