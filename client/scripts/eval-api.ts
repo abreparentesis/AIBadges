@@ -33,6 +33,29 @@ function parseExport(path: string): RawConversation[] {
     .filter((c) => c.messages.length > 0);
 }
 
+// Codex CLI on the user's ChatGPT Plus subscription — free per-token, quota-limited.
+// Select with CALLER=codex. Prompt goes in via stdin; the reply comes back through
+// --output-last-message (stdout carries progress noise).
+function codexCaller(): ModelCaller {
+  const model = process.env.CODEX_MODEL ?? 'gpt-5.5';
+  return {
+    async complete(prompt) {
+      const out = `/tmp/codex-eval-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
+      // prompt goes as an argument — the stdin form ('-') hangs in this codex version
+      const proc = Bun.spawn(
+        ['codex', 'exec', '-m', model, '-c', 'model_reasoning_effort="high"',
+         '-s', 'read-only', '--skip-git-repo-check', '--output-last-message', out, prompt],
+        { stdout: 'ignore', stderr: 'pipe' },
+      );
+      const code = await proc.exited;
+      if (code !== 0) throw new Error(`codex exec exited ${code}: ${await new Response(proc.stderr).text()}`.slice(0, 400));
+      const text = await Bun.file(out).text().catch(() => '');
+      if (!text.trim()) throw new Error('codex exec produced no final message');
+      return text;
+    },
+  };
+}
+
 // OpenRouter -> openai/gpt-5.5, high reasoning effort. One call per model step.
 function openrouterCaller(): ModelCaller {
   const key = process.env.OPENROUTER_API_KEY;
@@ -91,9 +114,13 @@ async function main() {
   const convos = all.filter((c) => ids.has(c.id));
   console.log(`Loaded ${all.length}; scoring ${convos.length} via ${MODEL} (high effort)…`);
 
+  const useCodex = process.env.CALLER === 'codex';
+  const caller = useCodex ? codexCaller() : openrouterCaller();
+  if (useCodex) console.error('  caller: codex CLI (ChatGPT subscription quota)');
+
   const t0 = Date.now();
-  const profile = await buildProfile(convos, openrouterCaller(), {
-    version: 1, now: new Date().toISOString(), modelProvenance: `gpt-5.5-high`,
+  const profile = await buildProfile(convos, caller, {
+    version: 1, now: new Date().toISOString(), modelProvenance: useCodex ? 'gpt-5.5-codex-cli' : `gpt-5.5-high`,
     fastModel: MODEL, bestModel: MODEL, perConvoChars: 2500, maxChars: 40000, concurrency: 2,
     onPhase: (ph) => console.error(`  ${ph.phase}: ${ph.done}/${ph.total}`),
   });
