@@ -22,7 +22,7 @@ import { assembleProfile } from '../src/engine/assemble';
 import type { RawConversation } from '../src/capture/types';
 import type { EvidenceUnit, Capability } from '../src/engine/types';
 
-const DIR = 'eval';
+const DIR = process.env.EVAL_DIR || 'eval'; // per-user dirs for the WildChat calibration source
 const EV_TYPES = ['decision', 'reasoning_move', 'episode', 'preference'];
 const toIso = (t: unknown): string => {
   const n = typeof t === 'number' ? t : Number(t);
