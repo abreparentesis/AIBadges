@@ -55,182 +55,147 @@ export function renderCardBody(type: string, content: Record<string, unknown>): 
   return `<h1>${esc(type)}</h1><pre>${esc(JSON.stringify(content, null, 2))}</pre>`;
 }
 
-// Full LIGHT-themed public report mirroring the client UI: shows only the sections the
-// owner marked public. typeCard -> collectible hero + summary; identityCard -> "How you
-// think" trait cards; trajectorySnippet -> "Where you're heading" momentum rows.
+const EXTENSION_URL = 'https://github.com/abreparentesis/AIBadges'; // swap for the Chrome Web Store listing once published
+
+const DIMENSIONS: Array<{ key: string; name: string; blurb: string }> = [
+  { key: 'delegation', name: 'Delegation', blurb: 'What they hand off to AI, and how completely they scope it.' },
+  { key: 'description', name: 'Description', blurb: 'How clearly they state goals, constraints, and context.' },
+  { key: 'discernment', name: 'Discernment', blurb: 'Whether they judge and push back on the AI\'s output.' },
+  { key: 'diligence', name: 'Diligence', blurb: 'Whether they verify what the AI produces before relying on it.' },
+];
+const BAND_TICKS_PAGE: Record<string, number> = { emerging: 1, developing: 2, proficient: 3, advanced: 4 };
+
+function fmtDate(iso: unknown): string {
+  const d = new Date(String(iso ?? ''));
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+function fmtMonth(iso: unknown): string {
+  const d = new Date(String(iso ?? ''));
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+}
+
+// The public share page is the web edition of the OG certificate: same engraved-institution
+// language (Besley display, ink/purple/hairline palette) so the click-through from a
+// LinkedIn card lands in the same visual world. Personality sections are gone with the
+// fluency-only pivot; the page renders the credential, explains the four dimensions,
+// says when it was measured, and nudges the viewer to measure themselves.
 function renderReportPage(
   signals: Array<{ type: string; surfacedContent: Record<string, unknown> }>,
   provenance: string,
   ogImageUrl?: string,
   coverage?: { provisional: boolean; conversationCount: number },
+  meta?: { computedAt?: string; sourceWindow?: { fromDate?: string; toDate?: string; conversationCount?: number } },
 ): string {
-  const byType = (t: string) => signals.find((s) => s.type === t)?.surfacedContent;
-  const typeC = byType('typeCard');
-  const statC = byType('statBadge');
-  const identityC = byType('identityCard');
-  const trajC = byType('trajectorySnippet');
+  const statC = signals.find((s) => s.type === 'statBadge')?.surfacedContent;
 
-  const og = typeC
-    ? `<meta property="og:title" content="I'm ${esc(typeC.code ?? '')} — ${esc(typeC.name ?? '')}">
-<meta property="og:description" content="${esc(typeC.summary ?? 'My cognitive profile, computed from my own AI chats.')}">
+  const score = statC?.fluencyScore;
+  const level = typeof statC?.level === 'string' ? statC.level : '';
+  const headline = statC
+    ? (score !== undefined ? `${esc(score)}/100` : `Stage ${esc(statC.yeggeStage ?? '?')}`)
+    : '';
+
+  const og = statC
+    ? `<meta property="og:title" content="AI Fluency Index — ${esc(headline)}${level ? ` (${esc(level)})` : ''}">
+<meta property="og:description" content="Assessed from real chat history across four fluency dimensions. Every claim anchored to evidence.">
 <meta property="og:site_name" content="AI Fluency Index">`
-    : `<meta property="og:title" content="AI Fluency Index profile">`;
-
+    : '<meta property="og:title" content="AI Fluency Index profile">';
   const ogImage = ogImageUrl
     ? `<meta property="og:image" content="${esc(ogImageUrl)}">
 <meta property="og:image:width" content="1200"><meta property="og:image:height" content="627">
 <meta name="twitter:card" content="summary_large_image">`
     : '<meta name="twitter:card" content="summary">';
 
-  // Cognitive Type hero (reuse the collectible card body) + summary.
-  let typeSection = '';
-  if (typeC) {
-    typeSection = `<section class="sec">
-      <div class="sech"><span class="dot" style="background:#5737f4"></span><h2>Cognitive Type</h2></div>
-      <div class="hero">
-        <div class="herocard">${renderCardBody('typeCard', typeC)}</div>
-        <div class="herosum">${esc(typeC.summary ?? '')}</div>
-      </div>
-    </section>`;
+  // Measured line: date + window, only from what the profile actually recorded.
+  const sw = meta?.sourceWindow;
+  const measuredBits: string[] = [];
+  if (meta?.computedAt && fmtDate(meta.computedAt)) measuredBits.push(`Measured ${fmtDate(meta.computedAt)}`);
+  if (sw?.conversationCount) {
+    const span = fmtMonth(sw.fromDate) && fmtMonth(sw.toDate) ? ` spanning ${fmtMonth(sw.fromDate)} – ${fmtMonth(sw.toDate)}` : '';
+    measuredBits.push(`from ${Number(sw.conversationCount)} conversations${span}`);
   }
+  const measured = measuredBits.join(' ');
 
-  // AI Fluency Index — Yegge stage + the four aiFluency dimension bands.
-  let literacySection = '';
-  if (statC) {
-    const f = (statC.aiFluency ?? {}) as Record<string, unknown>;
-    const DIM_LABEL: Record<string, string> = {
-      delegation: 'Delegation', description: 'Description', discernment: 'Discernment', diligence: 'Diligence',
-    };
-    const rows = ['delegation', 'description', 'discernment', 'diligence']
-      .filter((k) => f[k] !== undefined)
-      .map((k) => `<div class="mrow">
-        <span class="dim">${esc(DIM_LABEL[k] ?? k)}</span>
-        <span class="vel">${esc(f[k])}</span>
-      </div>`).join('');
-    literacySection = `<section class="sec">
-      <div class="sech"><span class="dot" style="background:#0046ff"></span><h2>AI Fluency Index</h2></div>
-      <div class="hero">
-        <div class="herocard">${renderCardBody('statBadge', statC)}</div>
-        <div class="herosum">${rows}</div>
-      </div>
-    </section>`;
-  }
+  const f = (statC?.aiFluency ?? {}) as Record<string, unknown>;
+  const dimensionRows = DIMENSIONS.filter((d) => typeof f[d.key] === 'string').map((d) => {
+    const band = String(f[d.key]);
+    const ticks = BAND_TICKS_PAGE[band] ?? 2;
+    const segs = [0, 1, 2, 3].map((n) => `<i class="${n < ticks ? 'on' : ''}"></i>`).join('');
+    return `<div class="dim">
+      <div class="dimhead"><span class="dimname">${esc(d.name)}</span><span class="scale" aria-hidden="true">${segs}</span><span class="band">${esc(band)}</span></div>
+      <p class="dimblurb">${esc(d.blurb)}</p>
+    </div>`;
+  }).join('');
 
-  // How you think — one trait card per thinking claim, cycling an accent color.
-  let thinkingSection = '';
-  if (identityC) {
-    const thinking = Array.isArray(identityC.thinking)
-      ? (identityC.thinking as Array<Record<string, unknown>>) : [];
-    const cards = thinking.map((tItem, i) => {
-      const conf = String(tItem.confidence ?? 'low');
-      const confClass = ['high', 'medium', 'low'].includes(conf) ? conf : 'low';
-      return `<div class="trait c${i % 6}">
-        <div class="tt">${esc(tItem.claim ?? '')}</div>
-        <span class="conf ${confClass}">${esc(conf)} confidence</span>
-      </div>`;
-    }).join('');
-    thinkingSection = `<section class="sec">
-      <div class="sech"><span class="dot" style="background:#5737f4"></span><h2>How you think</h2></div>
-      <div class="grid2">${cards}</div>
+  const certificate = statC
+    ? `<section class="cert" aria-label="AI Fluency Index credential">
+      <div class="eyebrow">&#9679; AI FLUENCY INDEX</div>
+      <div class="kicker">Credential</div>
+      <div class="score">${headline}</div>
+      ${level ? `<div class="level">${esc(level)}</div>` : ''}
+      ${measured ? `<div class="measured">${esc(measured)}</div>` : ''}
+      ${coverage?.provisional ? `<div class="prov"><strong>Provisional read.</strong> Computed from only ${Number(coverage.conversationCount)} conversation${coverage.conversationCount === 1 ? '' : 's'} of chat history; levels read low on thin history. A fuller import gives a more reliable picture.</div>` : ''}
+      <div class="rule"></div>
+      <div class="dims">${dimensionRows}</div>
+      <div class="rule"></div>
+      <p class="provenance">${esc(provenance)} Every claim is anchored to real quotes from the holder's own history.</p>
+    </section>`
+    : `<section class="cert empty">
+      <div class="eyebrow">&#9679; AI FLUENCY INDEX</div>
+      <p class="nobadge">This person hasn't published their AI Fluency Index yet.</p>
     </section>`;
-  }
-
-  // Where you're heading — one momentum row per trajectory shift.
-  let trajSection = '';
-  if (trajC) {
-    const shifts = Array.isArray(trajC.shifts)
-      ? (trajC.shifts as Array<Record<string, unknown>>) : [];
-    const ARROW: Record<string, string> = { rising: '↑', falling: '↓', steady: '→' };
-    const rows = shifts.map((s) => {
-      const dir = String(s.direction ?? 'steady');
-      const dirClass = ['rising', 'falling', 'steady'].includes(dir) ? dir : 'steady';
-      return `<div class="mrow">
-        <span class="arr ${dirClass}">${esc(ARROW[dir] ?? ARROW.steady)}</span>
-        <span class="dim">${esc(s.dimension ?? '')}</span>
-        <span class="vel">${esc(dir)} · ${esc(s.velocity ?? '')}</span>
-      </div>`;
-    }).join('');
-    trajSection = `<section class="sec">
-      <div class="sech"><span class="dot" style="background:#12b76a"></span><h2>Where you're heading</h2></div>
-      ${rows}
-    </section>`;
-  }
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Fluency Index profile</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Fluency Index${headline ? ` — ${headline}` : ''}</title>
 ${og}
 ${ogImage}
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Besley:wght@700;800&display=swap" rel="stylesheet">
 <style>
-:root{
-  --blue:#0046ff;--purple:#5737f4;--mint:#3effc8;--lime:#c4ff3c;--pink:#ff5983;--amber:#f5a623;
-  --success:#12b76a;--success-bg:#c9ffeb;--success-text:#005c4c;
-  --g50:#f9fafb;--g100:#f3f4f6;--g200:#e5e7eb;--g300:#d2d6db;--g500:#6c737f;--g600:#4d5761;--g700:#384250;--g900:#111927;
-}
+:root{--ink:#17103B;--purple:#5737F4;--muted:#5D5876;--hair:#D9D3EE;--ground:#FBFAFD;--amber-bg:#FFF2D6;--amber-ink:#7A4A12}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;font:16px/1.55 system-ui,-apple-system,sans-serif;background:#fff;color:var(--g900)}
-.topbar{border-bottom:1px solid var(--g200);height:60px;display:flex;align-items:center;padding:0 24px}
+body{margin:0;min-height:100vh;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--ground);color:var(--ink)}
+.topbar{height:60px;display:flex;align-items:center;padding:0 28px;border-bottom:1px solid var(--hair)}
 .topbar .mark{font-weight:700;letter-spacing:-.01em}
-.topbar .sub{margin-left:12px;padding-left:12px;border-left:1px solid var(--g200);color:var(--g600);font-size:14px}
-main{max-width:760px;margin:0 auto;padding:34px 24px 60px}
-.sec{margin-top:38px}
-.sec:first-of-type{margin-top:24px}
-.sech{display:flex;align-items:center;gap:10px;margin-bottom:16px}
-.sech h2{font-size:21px;font-weight:600;margin:0}
-.dot{width:8px;height:8px;border-radius:50%;display:inline-block}
-.hero{display:flex;gap:28px;align-items:center;flex-wrap:wrap}
-.herocard{flex:0 0 auto}
-.herosum{flex:1;min-width:260px;font-size:18px;line-height:1.55;color:var(--g700)}
-.herosum .mrow:last-child{margin-bottom:0}
-/* Fluency stat card (wraps renderCardBody('statBadge', ...) output) */
-.herocard:has(.brand){width:220px;background:#fff;border:1px solid var(--g200);border-radius:22px;
-  padding:24px 22px;box-shadow:0 10px 28px rgba(17,25,39,.06)}
-.brand{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--blue)}
-.big{font-size:40px;font-weight:800;margin:10px 0 4px;letter-spacing:-.02em;color:var(--g900)}
-.herocard ul{list-style:none;margin:12px 0 0;padding:0;font-size:13px;color:var(--g600)}
-.herocard ul li{padding:4px 0}
-.herocard ul li b{color:var(--g900)}
-/* Collectible hero card (ported from theme.css .holo, dark gradient on a white page) */
-.holo{--col:#5737f4;width:330px;border-radius:22px;overflow:hidden;position:relative;color:#fff;
-  background:linear-gradient(160deg,color-mix(in srgb,var(--col) 70%,#fff 0%),var(--col) 55%,#1b0e8c);
-  padding:24px 22px;display:flex;flex-direction:column;box-shadow:0 18px 44px rgba(44,18,244,.30)}
-.holo::before{content:"";position:absolute;inset:0;background:
-  radial-gradient(120px 120px at 82% 10%,rgba(196,255,60,.34),transparent 60%),
-  radial-gradient(150px 150px at 12% 92%,rgba(62,255,200,.30),transparent 60%),
-  repeating-linear-gradient(115deg,rgba(255,255,255,.10) 0 2px,transparent 2px 9px);mix-blend-mode:screen}
-.holo>*{position:relative}
-.htop{display:flex;justify-content:space-between;align-items:center;font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.88}
-.rar{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);padding:3px 10px;border-radius:50px;font-weight:600}
-.hcode{font-size:72px;font-weight:800;line-height:1;margin-top:22px;letter-spacing:-.02em}
-.hname{font-size:24px;font-weight:600;margin-top:2px}
-.hgrp{display:inline-block;margin-top:11px;background:rgba(255,255,255,.14);padding:5px 12px;border-radius:50px;font-size:13px;width:fit-content}
-.hsum{margin:16px 0 18px;font-size:14px;opacity:.95}
-.axes{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
-.ax .axl{display:flex;justify-content:space-between;font-size:12px;opacity:.92;margin-bottom:4px}
-.ax .bar{height:7px;border-radius:50px;background:rgba(255,255,255,.22);overflow:hidden}
-.ax .bar>i{display:block;height:100%;border-radius:50px;background:linear-gradient(90deg,var(--mint),var(--lime))}
-.hdis{margin-top:18px;font-size:10px;opacity:.7;line-height:1.4}
-/* Trait cards (ported from theme.css .trait/.conf) */
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.trait{background:#fff;border:1px solid var(--g200);border-radius:14px;padding:16px 18px;position:relative;overflow:hidden}
-.trait::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px}
-.trait.c0::before{background:var(--purple)}.trait.c1::before{background:var(--mint)}.trait.c2::before{background:var(--pink)}
-.trait.c3::before{background:var(--blue)}.trait.c4::before{background:var(--lime)}.trait.c5::before{background:var(--amber)}
-.trait .tt{font-size:15px;line-height:1.5}
-.conf{display:inline-block;margin-top:10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:3px 10px;border-radius:50px}
-.conf.high{background:var(--success-bg);color:var(--success-text)}.conf.medium{background:#fff2d6;color:#7a4a12}.conf.low{background:var(--g100);color:var(--g600)}
-/* Momentum rows (ported from theme.css .mrow/.arr/.vel) */
-.mrow{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--g200);border-radius:14px;padding:14px 18px;margin-bottom:12px}
-.arr{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex:0 0 auto}
-.arr.rising{background:var(--success)}.arr.falling{background:var(--pink)}.arr.steady{background:var(--blue)}
-.mrow .dim{flex:1;font-size:15px}
-.vel{font-size:12px;font-weight:600;color:var(--g600);background:var(--g100);padding:4px 12px;border-radius:50px;text-transform:capitalize;white-space:nowrap}
-footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--g200);font-size:12px;color:var(--g500);text-align:center;line-height:1.5}
-@media (max-width:560px){.grid2{grid-template-columns:1fr}}
+main{max-width:840px;margin:0 auto;padding:48px 24px 72px}
+.cert{background:#fff;border:2px solid var(--ink);position:relative;padding:56px 48px 40px;text-align:center;
+  box-shadow:0 24px 60px rgba(23,16,59,.08)}
+.cert::after{content:"";position:absolute;inset:10px;border:.75px solid var(--purple);pointer-events:none}
+.eyebrow{font-size:13px;font-weight:700;letter-spacing:.42em;text-indent:.42em}
+.kicker{margin-top:34px;font-size:13px;letter-spacing:.34em;text-indent:.34em;text-transform:uppercase;color:var(--purple)}
+.score{font-family:Besley,Georgia,serif;font-weight:800;font-size:clamp(56px,9vw,84px);line-height:1.05;margin-top:14px;letter-spacing:-.01em}
+.level{font-family:Besley,Georgia,serif;font-weight:700;font-size:clamp(22px,3.4vw,28px);margin-top:2px;color:var(--purple)}
+.measured{margin-top:14px;font-size:14px;color:var(--muted)}
+.prov{margin:22px auto 0;max-width:560px;background:var(--amber-bg);color:var(--amber-ink);padding:12px 18px;font-size:13.5px;line-height:1.5;text-align:left}
+.rule{height:1px;background:var(--hair);margin:34px auto;max-width:560px}
+.dims{max-width:600px;margin:0 auto;text-align:left;display:grid;gap:22px}
+.dimhead{display:flex;align-items:baseline;gap:14px}
+.dimname{font-weight:650;font-size:16px;flex:0 0 118px}
+.scale{display:inline-flex;gap:5px;flex:1}
+.scale i{width:30px;height:5px;border-radius:2.5px;background:var(--hair)}
+.scale i.on{background:var(--purple)}
+.band{font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.dimblurb{margin:4px 0 0 132px;font-size:13.5px;color:var(--muted);line-height:1.5}
+.provenance{max-width:560px;margin:0 auto;font-size:12.5px;color:var(--muted);line-height:1.6}
+.nobadge{font-family:Besley,Georgia,serif;font-size:22px;margin:40px 0}
+.cta{margin-top:36px;text-align:center}
+.cta h2{font-family:Besley,Georgia,serif;font-size:24px;font-weight:700;margin:0 0 6px}
+.cta p{margin:0 auto;max-width:480px;font-size:14.5px;color:var(--muted)}
+.cta a{display:inline-block;margin-top:16px;background:var(--ink);color:#fff;text-decoration:none;font-weight:600;
+  font-size:15px;padding:12px 26px;border-radius:8px}
+.cta a:hover{background:var(--purple)}
+@media (max-width:600px){.cert{padding:40px 20px 32px}.dimname{flex-basis:100%}.dimblurb{margin-left:0}.dimhead{flex-wrap:wrap}}
+@media (prefers-reduced-motion:no-preference){.cta a{transition:background .18s ease-out}}
 </style></head>
 <body>
-<div class="topbar"><span class="mark">AI Fluency Index</span><span class="sub">living profile</span></div>
-<main>${coverage?.provisional ? `<div style="margin-top:24px;background:#fff2d6;color:#7a4a12;border-radius:14px;padding:12px 18px;font-size:14px;line-height:1.5"><strong>Provisional read.</strong> Computed from only ${Number(coverage.conversationCount)} conversation${coverage.conversationCount === 1 ? '' : 's'} of chat history; levels read low on thin history. A fuller import gives a more reliable picture.</div>` : ''}${typeSection}${literacySection}${thinkingSection}${trajSection}</main>
-<footer>${esc(provenance)} Public-domain Jungian dichotomies (E/I, S/N, T/F, J/P). Not affiliated with or derived from the Myers-Briggs Type Indicator® or The Myers-Briggs Company.</footer>
+<div class="topbar"><span class="mark">AI Fluency Index</span></div>
+<main>
+${certificate}
+<section class="cta">
+  <h2>How fluently do you work with AI?</h2>
+  <p>This index is computed from the holder's own chat history, in their own AI session — raw conversations never leave their machine. Measure yours the same way.</p>
+  <a href="${EXTENSION_URL}" rel="noopener">Get the Chrome extension &rarr;</a>
+</section>
+</main>
 </body></html>`;
 }
 
@@ -391,12 +356,25 @@ export function createApp(db: Database, opts: { inviteToken: string; ogRender?: 
     const prof = db.query('SELECT profile_json FROM profile_versions WHERE user_key = ? ORDER BY version DESC LIMIT 1')
       .get(owner.user_key) as { profile_json: string } | null;
     let coverage: { provisional: boolean; conversationCount: number } | undefined;
+    let meta: { computedAt?: string; sourceWindow?: { fromDate?: string; toDate?: string; conversationCount?: number } } | undefined;
     if (prof) {
       try {
-        const parsed = JSON.parse(prof.profile_json) as { coverage?: { provisional?: unknown; conversationCount?: unknown } };
+        const parsed = JSON.parse(prof.profile_json) as {
+          computedAt?: unknown;
+          sourceWindow?: { fromDate?: unknown; toDate?: unknown; conversationCount?: unknown };
+          coverage?: { provisional?: unknown; conversationCount?: unknown };
+        };
         if (parsed.coverage && typeof parsed.coverage.provisional === 'boolean' && typeof parsed.coverage.conversationCount === 'number') {
           coverage = { provisional: parsed.coverage.provisional, conversationCount: parsed.coverage.conversationCount };
         }
+        meta = {
+          computedAt: typeof parsed.computedAt === 'string' ? parsed.computedAt : undefined,
+          sourceWindow: parsed.sourceWindow ? {
+            fromDate: typeof parsed.sourceWindow.fromDate === 'string' ? parsed.sourceWindow.fromDate : undefined,
+            toDate: typeof parsed.sourceWindow.toDate === 'string' ? parsed.sourceWindow.toDate : undefined,
+            conversationCount: typeof parsed.sourceWindow.conversationCount === 'number' ? parsed.sourceWindow.conversationCount : undefined,
+          } : undefined,
+        };
       } catch { /* stored JSON is trusted but stay defensive; no banner beats a 500 */ }
     }
     return c.html(renderReportPage(
@@ -404,6 +382,7 @@ export function createApp(db: Database, opts: { inviteToken: string; ogRender?: 
       PROVENANCE_LABEL,
       ogImageUrl,
       coverage,
+      meta,
     ));
   });
 

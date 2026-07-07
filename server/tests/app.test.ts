@@ -161,7 +161,7 @@ describe('signals + sharing', () => {
     const share = async (key: string, profile: unknown) => {
       await call(app, 'POST', '/v1/profile', { key, invite: INVITE, body: profile });
       const pub = await call(app, 'POST', '/v1/signals', {
-        key, body: [{ type: 'identityCard', surfacedContent: { headline: 'h' }, disclosure: 'public' }],
+        key, body: [{ type: 'statBadge', surfacedContent: { yeggeStage: 3, aiFluency: { delegation: 'developing' } }, disclosure: 'public' }],
       });
       const token = (await pub.json()).signals[0].shareToken as string;
       return (await app.request(`/s/${token}`)).text();
@@ -197,12 +197,15 @@ describe('signals + sharing', () => {
 });
 
 describe('share viewer (HTML)', () => {
-  it('renders the full report for a public signal and 404s an unknown token', async () => {
+  it('renders the fluency certificate for a public badge and 404s an unknown token', async () => {
     const app = makeApp();
     await call(app, 'POST', '/v1/profile', { key: 'k1', invite: INVITE, body: sampleProfile });
     const pub = await call(app, 'POST', '/v1/signals', {
       key: 'k1',
-      body: [{ type: 'identityCard', surfacedContent: { headline: 'Decomposes before acting', thinking: [{ claim: 'Decomposes before acting', confidence: 'high' }] }, disclosure: 'public' }],
+      body: [{ type: 'statBadge', surfacedContent: {
+        fluencyScore: 62, level: 'Intermediate', yeggeStage: 4,
+        aiFluency: { delegation: 'proficient', description: 'advanced', discernment: 'developing', diligence: 'emerging' },
+      }, disclosure: 'public' }],
     });
     const token = (await pub.json()).signals[0].shareToken as string;
 
@@ -210,9 +213,13 @@ describe('share viewer (HTML)', () => {
     expect(page.status).toBe(200);
     expect(page.headers.get('content-type')).toContain('text/html');
     const html = await page.text();
-    expect(html).toContain('Decomposes before acting');
-    expect(html).toContain('AI Fluency Index');
-    expect(html).toContain('How you think');
+    expect(html).toContain('62/100');                 // score consistent with the private view
+    expect(html).toContain('Intermediate');            // human level
+    expect(html).toContain('Measured');                // when it was measured (from the pushed profile)
+    expect(html).toContain('hand off to AI');          // dimension explained in plain language
+    expect(html).toContain('Get the Chrome extension'); // viewer nudge
+    expect(html).not.toContain('living profile');      // retired topbar sub
+    expect(html).not.toContain('Jungian');             // personality remnants gone
 
     const missing = await app.request('/s/does-not-exist');
     expect(missing.status).toBe(404);
@@ -243,10 +250,13 @@ describe('share viewer (HTML)', () => {
     const page = await app.request(`/s/${typeToken}`);
     expect(page.status).toBe(200);
     const html = await page.text();
-    expect(html).toContain('INTJ'); // public type code
-    expect(html).toContain('verification discipline'); // public trajectory dimension
-    expect(html).not.toContain('SECRET-PRIVATE-CLAIM'); // private identity omitted
-    expect(html).not.toContain('How you think'); // private section header absent
+    // Personality sections are retired with the fluency-only pivot: even PUBLIC typeCard /
+    // trajectory content no longer renders, and private content never leaks.
+    expect(html).not.toContain('INTJ');
+    expect(html).not.toContain('verification discipline');
+    expect(html).not.toContain('SECRET-PRIVATE-CLAIM');
+    expect(html).toContain("hasn't published their AI Fluency Index"); // graceful fallback
+    expect(html).toContain('Get the Chrome extension'); // the nudge survives the fallback
   });
 });
 
@@ -445,10 +455,11 @@ describe('share page escapes signal content', () => {
     const app = makeApp();
     const xss = '<script>alert(1)</script>';
     const res = await call(app, 'POST', '/v1/signals', { key: 'kx', invite: INVITE, body: [
-      TC({ name: xss, summary: xss }),
-      { type: 'identityCard', disclosure: 'public', surfacedContent: { headline: xss, thinking: [{ claim: xss, confidence: 'high' }] } },
+      { type: 'statBadge', disclosure: 'public', surfacedContent: {
+        fluencyScore: 62, level: xss, yeggeStage: 4, aiFluency: { delegation: xss },
+      } },
     ] });
-    const token = ((await res.json()).signals as Array<{ type: string; shareToken: string }>).find((s) => s.type === 'typeCard')!.shareToken;
+    const token = ((await res.json()).signals as Array<{ type: string; shareToken: string }>).find((s) => s.type === 'statBadge')!.shareToken;
     const html = await (await app.request(`/s/${token}`)).text();
     expect(html).not.toContain('<script>alert(1)</script>');
     expect(html).toContain('&lt;script&gt;');
