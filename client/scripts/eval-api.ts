@@ -25,7 +25,11 @@ const toIso = (t: unknown): string => {
 
 function parseExport(path: string): RawConversation[] {
   return (JSON.parse(readFileSync(path, 'utf8')) as any[])
-    .map((c, i) => ({ id: String(c.conversation_id ?? c.id ?? i), title: String(c.title ?? ''), createdAt: toIso(c.create_time), messages: linearizeMapping(c.mapping, c.current_node) }))
+    .map((c, i) =>
+      // already-linearized RawConversation (e.g. the WildChat calibration dirs) passes through
+      Array.isArray(c.messages)
+        ? { id: String(c.id ?? i), title: String(c.title ?? ''), createdAt: String(c.createdAt ?? new Date(0).toISOString()), messages: c.messages }
+        : { id: String(c.conversation_id ?? c.id ?? i), title: String(c.title ?? ''), createdAt: toIso(c.create_time), messages: linearizeMapping(c.mapping, c.current_node) })
     .filter((c) => c.messages.length > 0);
 }
 
@@ -35,16 +39,27 @@ function openrouterCaller(): ModelCaller {
   if (!key) throw new Error('OPENROUTER_API_KEY not set (run under `phase run ... -- bun ...`)');
   return {
     async complete(prompt) {
-      const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: MODEL, reasoning: { effort: 'high' }, messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!res.ok) throw new Error(`OpenRouter ${res.status}: ${(await res.text()).slice(0, 500)}`);
-      const j = await res.json() as any;
-      const text = j?.choices?.[0]?.message?.content;
-      if (typeof text !== 'string' || !text) throw new Error(`empty completion: ${JSON.stringify(j).slice(0, 300)}`);
-      return text;
+      // high-effort reasoning + a big prompt can exhaust the default completion budget (finish_reason
+      // "error") — give it plenty of room and retry transient provider errors.
+      let lastErr = '';
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+            body: JSON.stringify({ model: MODEL, reasoning: { effort: 'high' }, max_tokens: 24000, messages: [{ role: 'user', content: prompt }] }),
+          });
+          if (!res.ok) { lastErr = `${res.status}: ${(await res.text()).slice(0, 300)}`; }
+          else {
+            const j = await res.json() as any;
+            const text = j?.choices?.[0]?.message?.content;
+            if (typeof text === 'string' && text) return text;
+            lastErr = `empty/err: ${JSON.stringify(j?.choices?.[0] ?? j).slice(0, 300)}`;
+          }
+        } catch (e) { lastErr = String((e as Error)?.message ?? e); }
+        await new Promise((r) => setTimeout(r, 1500 * attempt));
+      }
+      throw new Error(`OpenRouter failed after 3 tries — ${lastErr}`);
     },
   };
 }
