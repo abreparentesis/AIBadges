@@ -71,6 +71,14 @@ export const ProfileSchema = z.object({
   computedAt: z.string(),
   modelProvenance: z.string(),
   sourceWindow: z.object({ fromDate: z.string(), toDate: z.string(), conversationCount: z.number().int() }),
+  // Calibration finding (docs/research/rating-calibration-datasets.md): below ~10 source
+  // conversations, or with evidence spanning <5, bands are floor-dominated — the profile
+  // measures data scarcity, not the person. Optional so pre-existing stored profiles parse.
+  coverage: z.object({
+    provisional: z.boolean(),
+    conversationCount: z.number().int(),
+    evidenceConversations: z.number().int(),
+  }).optional(),
   thinking: z.array(ClaimSchema),
   capability: CapabilitySchema.optional(),
   trajectory: TrajectorySchema,

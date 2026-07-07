@@ -168,6 +168,16 @@ export default function App() {
         An evidence-backed reflection from your own {sourceLabel} history. Every claim links to the quotes behind it.
         This is a behavioral mirror, not a validated personality test. Your raw chats are never sent to our servers.
       </p>
+      {profile.coverage?.provisional && (
+        <div className="bb-card" role="status" style={{ marginTop: 16, maxWidth: 580, padding: '12px 16px', borderLeft: 'none', background: 'var(--bb-amber-soft, #fdf3e3)' }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>Provisional read</div>
+          <div className="bb-muted" style={{ fontSize: 13.5, lineHeight: 1.5 }}>
+            This profile draws on {profile.coverage.conversationCount} conversation{profile.coverage.conversationCount === 1 ? '' : 's'}
+            {profile.coverage.evidenceConversations < 5 ? `, with quotable evidence from only ${profile.coverage.evidenceConversations}` : ''}.
+            With this little history, levels read low no matter who you are. Import more of your chat history for a reliable picture.
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 28, alignItems: 'stretch', marginTop: 22, flexWrap: 'wrap' }}>
         {ty ? <HoloCard type={ty} /> : <div className="bb-card" style={{ width: 330 }}>No cognitive type this run.</div>}

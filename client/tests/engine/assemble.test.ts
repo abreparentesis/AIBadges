@@ -106,6 +106,37 @@ describe('assembleProfile', () => {
     expect(p.evidence!.map((e) => e.id)).toEqual(['e1']);
   });
 
+  it('flags thin histories as provisional coverage (the PRISM floor-effect lesson)', () => {
+    const parts: ProfileParts = {
+      evidence: [ev('e1', 'c1'), ev('e2', 'c2')],
+      thinking: [{ claim: 'a claim', evidenceIds: ['e1', 'e2'], confidence: 'low' }],
+      trajectory: emptyTraj,
+    };
+    // 5 conversations in the window -> provisional regardless of evidence spread
+    const thin = assembleProfile(parts, { ...opts, sourceWindow: { ...opts.sourceWindow, conversationCount: 5 } });
+    expect(thin.coverage).toEqual({ provisional: true, conversationCount: 5, evidenceConversations: 2 });
+
+    // 25 conversations but surviving evidence spans only 2 -> still provisional
+    const narrow = assembleProfile(parts, { ...opts, sourceWindow: { ...opts.sourceWindow, conversationCount: 25 } });
+    expect(narrow.coverage?.provisional).toBe(true);
+    expect(narrow.coverage?.evidenceConversations).toBe(2);
+
+    // 25 conversations with evidence across 5 distinct conversations -> adequate
+    const wideParts: ProfileParts = {
+      evidence: ['c1', 'c2', 'c3', 'c4', 'c5'].map((c, i) => ev(`e${i + 1}`, c)),
+      thinking: [{ claim: 'broad claim', evidenceIds: ['e1', 'e2', 'e3', 'e4', 'e5'], confidence: 'low' }],
+      trajectory: emptyTraj,
+    };
+    const wide = assembleProfile(wideParts, { ...opts, sourceWindow: { ...opts.sourceWindow, conversationCount: 25 } });
+    expect(wide.coverage).toEqual({ provisional: false, conversationCount: 25, evidenceConversations: 5 });
+
+    // schema round-trips the field, and old profiles without it still parse
+    expect(ProfileSchema.parse(wide).coverage?.provisional).toBe(false);
+    const legacy = { ...wide };
+    delete (legacy as Record<string, unknown>).coverage;
+    expect(ProfileSchema.parse(legacy).coverage).toBeUndefined();
+  });
+
   it('derives the Yegge stage from the capped bands and ignores the model-provided stage entirely', () => {
     // Decision record (WildChat calibration pilot, 2026-07-07): the model/audit step may emit
     // its own yeggeStage, but the assembler's derivation wins by design — the derived stage is

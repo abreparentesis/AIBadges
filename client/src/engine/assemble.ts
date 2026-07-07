@@ -139,9 +139,20 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
   }
   const usedEvidence: EvidenceUnit[] = evidence.filter((e) => referenced.has(e.id));
 
+  // Coverage gate: under ~10 source conversations, or with surviving evidence drawn from
+  // fewer than 5 distinct conversations, bands floor low regardless of the person
+  // (validated against PRISM; see docs/research/rating-calibration-datasets.md). The UI
+  // presents provisional profiles as a partial read, not a verdict.
+  const evidenceConversations = new Set(usedEvidence.map((e) => e.sourceRef.conversationId)).size;
+  const coverage = {
+    provisional: opts.sourceWindow.conversationCount < 10 || evidenceConversations < 5,
+    conversationCount: opts.sourceWindow.conversationCount,
+    evidenceConversations,
+  };
+
   const profile: Profile = {
     version: opts.version, computedAt: opts.now, modelProvenance: opts.modelProvenance,
-    sourceWindow: opts.sourceWindow,
+    sourceWindow: opts.sourceWindow, coverage,
     thinking: thinkingAnchored, trajectory: trajectoryAnchored, type: typeAnchored,
     ...(capabilityAnchored ? { capability: capabilityAnchored } : {}),
     evidence: usedEvidence,
