@@ -15,7 +15,7 @@ const caller: ModelCaller = {
 
 describe('buildProfile', () => {
   it('produces a schema-valid profile from transcripts', async () => {
-    const p = await buildProfile(transcripts, caller, {
+    const p = await buildProfile(transcripts, caller, { fluencyOnly: false,
       version: 1, now: '2026-06-05T00:00:00Z', modelProvenance: 'claude-in-session',
     });
     expect(ProfileSchema.safeParse(p).success).toBe(true);
@@ -44,7 +44,7 @@ describe('buildProfile', () => {
         });
       },
     };
-    const p = await buildProfile(transcripts, ghostCaller, {
+    const p = await buildProfile(transcripts, ghostCaller, { fluencyOnly: false,
       version: 1, now: '2026-06-05T00:00:00Z', modelProvenance: 'm',
     });
     // The 'ghost:9'-only claim is unbacked under the new rule and is dropped; only the real claim survives.
@@ -81,7 +81,7 @@ describe('buildProfile', () => {
         });
       },
     };
-    const p = await buildProfile(transcripts, richCaller, {
+    const p = await buildProfile(transcripts, richCaller, { fluencyOnly: false,
       version: 2, now: '2026-06-05T00:00:00Z', modelProvenance: 'm',
     });
     expect(p.thinking).toHaveLength(3);

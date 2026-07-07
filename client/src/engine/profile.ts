@@ -5,6 +5,7 @@ import { extractEvidence } from './evidence';
 import { synthesize, type SynthesisDebug } from './synthesize';
 import { computeCapability } from './capability';
 import { assembleProfile } from './assemble';
+import { FLUENCY_ONLY } from '../config';
 
 export type Phase = { phase: 'evidence' | 'synthesis'; done: number; total: number };
 
@@ -20,6 +21,8 @@ export interface BuildProfileOpts {
   concurrency?: number;
   onPhase?: (p: Phase) => void;
   onSynthesisDebug?: (d: SynthesisDebug) => void;
+  /** Override the product-wide FLUENCY_ONLY flag (tests exercise both modes). */
+  fluencyOnly?: boolean;
 }
 
 export async function buildProfile(convos: RawConversation[], caller: ModelCaller, opts: BuildProfileOpts): Promise<Profile> {
@@ -32,8 +35,14 @@ export async function buildProfile(convos: RawConversation[], caller: ModelCalle
   opts.onPhase?.({ phase: 'synthesis', done: 0, total: 1 });
   // Capability is a secondary lens computed off the same evidence; run it concurrently with
   // synthesis so it adds ~no wall-clock (it never throws — a failure resolves to null).
+  // Fluency-only mode skips the personality synthesis entirely (one fewer model call);
+  // assembleProfile and the schema tolerate the empty parts.
+  const emptySynth = {
+    thinking: [], trajectory: { window: { earlyTo: '', recentFrom: '' }, shifts: [] }, type: null,
+  } as Awaited<ReturnType<typeof synthesize>>;
+  const fluencyOnly = opts.fluencyOnly ?? FLUENCY_ONLY;
   const [{ thinking, trajectory, type: cogType }, capability] = await Promise.all([
-    synthesize(evidence, caller, opts.bestModel, opts.onSynthesisDebug),
+    fluencyOnly ? Promise.resolve(emptySynth) : synthesize(evidence, caller, opts.bestModel, opts.onSynthesisDebug),
     computeCapability(evidence, caller, opts.bestModel),
   ]);
   opts.onPhase?.({ phase: 'synthesis', done: 1, total: 1 });

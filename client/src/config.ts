@@ -14,3 +14,8 @@ export const shareUrl = (token: string) => `${BACKEND_URL}/s/${token}`;
 export const CHATGPT_GPT_URL =
   (import.meta.env.WXT_AIBADGES_GPT_URL as string | undefined) ??
   'https://chatgpt.com/g/g-6a26b204b0748191af3193558989e4bd-aibadges';
+
+// Product mode: fluency-only. The personality lens (cognitive type, thinking claims,
+// trajectory) is deactivated end to end — not computed by either path, not rendered, not
+// synced. Flip to false to reactivate; nothing is deleted, only gated.
+export const FLUENCY_ONLY = true;

@@ -1,4 +1,5 @@
 import type { CaptureBundle } from './chatgpt-export';
+import { FLUENCY_ONLY } from '../config';
 
 // Shared building blocks so the single-message prompt (manual bridge) and the two-message autorun
 // prompts stay in lockstep — the calibrated scoring rules live once, here.
@@ -16,8 +17,13 @@ const EVIDENCE_RULES = [
 
 const EXTRACTION_STEP = 'extract a RICH, GRANULAR set of short behavioral evidence units: aim for 2-4 per substantive conversation and draw from as many different conversations as you can (for a full history this is dozens of units, not a handful). Each is a DISTINCT behavior with its own id (e1, e2, ...), the conversationId it came from (the c1/c2/... value in the input), a one-line summary, a short verbatim quote of the USER, and a type from exactly: decision, reasoning_move, episode, preference. Especially capture moments where the person REACTS to the model — correcting it, disagreeing, rejecting or redoing a weak answer, or verifying/checking a claim — not only their requests; these reactions are the clearest capability signal and are easy to miss. Note that a quote which merely supplies a fact or context to the model (a date, a price, a relationship, which company to look at) is a weak signal — capture it if distinctive, but it evidences at most how they prompt.';
 
+// The personality step is gated by FLUENCY_ONLY: in fluency-only mode the model is never
+// asked for thinking/trajectory/type, which also shortens the reply (less truncation risk).
+const PERSONALITY_STEP =
+  'Write claims about how the person thinks (thinking) plus a few trajectory shifts (trajectory), each citing evidence ids. Optionally infer a four-letter behavioral type (Jungian dichotomies E/I, S/N, T/F, J/P) ONLY if the evidence clearly supports it; otherwise omit "type" entirely.';
+
 const SYNTHESIS_STEPS = [
-  'Write claims about how the person thinks (thinking) plus a few trajectory shifts (trajectory), each citing evidence ids. Optionally infer a four-letter behavioral type (Jungian dichotomies E/I, S/N, T/F, J/P) ONLY if the evidence clearly supports it; otherwise omit "type" entirely.',
+  ...(FLUENCY_ONLY ? [] : [PERSONALITY_STEP]),
   'Assess AI-working capability: score four AI-fluency dimensions, each a band emerging|developing|proficient|advanced, and for each cite the evidence ids whose quotes DEMONSTRATE that exact dimension. A skeptic reading only those quotes must agree the band is earned.',
   'CRITICAL: every fluency measures how the person ENGAGES THE AI, not the topic they discussed or facts they happened to share. Supplying information the model could not have known — a wine\'s vintage ("el triay es cosecha 2021"), that a flat is co-owned with a spouse ("el piso está al 50% con mi mujer"), which company to look into, a date or price — is ordinary context-giving: it counts at most toward description, and NEVER toward discernment, diligence, or delegation. A quote earns a dimension only if, read entirely on its own, it shows that dimension\'s specific action; if the same sentence would read identically in a message to a human who had given no prior answer, it is neither discernment nor diligence. Do NOT reuse a quote across dimensions unless it genuinely evidences each.',
   'Score to the evidence actually present, not to a default:',
@@ -36,7 +42,9 @@ const CITATION_RULE = 'Across the WHOLE output, cite a distinct evidence id for 
 
 const JSON_RULES = 'Return ONLY one JSON object inside a single ```json code block, with no text before or after. It must be strictly valid JSON: escape every double quote inside a string as \\", and put no markdown, links, or raw line breaks inside string values.';
 
-const SCALE_NOTE = 'lean is 50-100 and should track how strongly the evidence leans, near 50 when thin. Omit "type" if there is no clear signal. Output JSON only.';
+const SCALE_NOTE = FLUENCY_ONLY
+  ? 'Output JSON only.'
+  : 'lean is 50-100 and should track how strongly the evidence leans, near 50 when thin. Omit "type" if there is no clear signal. Output JSON only.';
 
 // Output shape fragments (defined once so the single- and two-message shapes can't drift).
 const SHAPE_THINKING = '"thinking":[{"claim":"...","evidenceIds":["e1"],"confidence":"low|medium|high"}]';
@@ -45,8 +53,12 @@ const SHAPE_TYPE = '"type":{"code":"INTJ","summary":"...","confidence":"low|medi
 const SHAPE_CAP = '"capability":{"aiFluency":{"delegation":{"band":"proficient","note":"one-sentence pattern, second person, no evidence ids","nextStep":"one concrete personal action","evidenceIds":["e1"]},"description":{"band":"advanced","note":"...","nextStep":"...","evidenceIds":[]},"discernment":{"band":"developing","note":"...","nextStep":"...","evidenceIds":[]},"diligence":{"band":"developing","note":"...","nextStep":"...","evidenceIds":[]}},"yeggeStage":{"stage":5,"evidenceIds":[]},"domains":[{"name":"...","band":"proficient","evidenceIds":[]}]}';
 const SHAPE_EVIDENCE = '"evidence":[{"id":"e1","conversationId":"c1","quote":"...","summary":"...","type":"decision|reasoning_move|episode|preference"}]';
 
-const SYNTH_SHAPE = `{${SHAPE_THINKING},\n ${SHAPE_TRAJ},\n ${SHAPE_TYPE},\n ${SHAPE_CAP}}`;
-const FULL_SHAPE = `{${SHAPE_THINKING},\n ${SHAPE_TRAJ},\n ${SHAPE_TYPE},\n ${SHAPE_CAP},\n ${SHAPE_EVIDENCE}}`;
+const SYNTH_SHAPE = FLUENCY_ONLY
+  ? `{${SHAPE_CAP}}`
+  : `{${SHAPE_THINKING},\n ${SHAPE_TRAJ},\n ${SHAPE_TYPE},\n ${SHAPE_CAP}}`;
+const FULL_SHAPE = FLUENCY_ONLY
+  ? `{${SHAPE_CAP},\n ${SHAPE_EVIDENCE}}`
+  : `{${SHAPE_THINKING},\n ${SHAPE_TRAJ},\n ${SHAPE_TYPE},\n ${SHAPE_CAP},\n ${SHAPE_EVIDENCE}}`;
 
 // Single message (manual bridge fallback): full profile + evidence in one reply.
 export const BRIDGE_INSTRUCTIONS = [

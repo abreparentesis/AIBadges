@@ -4,7 +4,7 @@ import type { Profile, Signal } from '../../src/engine/types';
 import { lookupType } from '../../src/engine/typeTable';
 import { ensureUserKey } from '../../src/store/userkey';
 import { BackendSync, NEEDS_REPUSH_KEY, repushIfNeeded } from '../../src/sync/backend';
-import { BACKEND_URL, INVITE_TOKEN, shareUrl } from '../../src/config';
+import { BACKEND_URL, INVITE_TOKEN, shareUrl, FLUENCY_ONLY } from '../../src/config';
 import { buildAddToProfileUrl, buildShareOnLinkedInUrl, defaultShareText, stageDrift } from '../../src/sync/linkedin';
 import { namedLevel } from '../../src/engine/levels';
 import { learningPath } from '../../src/engine/learningPath';
@@ -34,7 +34,7 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [signals, setSignals] = useState<UiSignal[]>([]);
   const [busy, setBusy] = useState('');
-  const [tab, setTab] = useState<Tab>('personality');
+  const [tab, setTab] = useState<Tab>(FLUENCY_ONLY ? 'literacy' : 'personality');
   const [publishedStage, setPublishedStage] = useState('');
 
   // Index the verified quotes once per profile, then resolve claim/axis/shift ids → quotes.
@@ -60,6 +60,23 @@ export default function App() {
       const parsed = (JSON.parse(s) as UiSignal[]).map((sig) =>
         ({ ...sig, disclosure: (sig.disclosure === 'private' ? 'private' : 'public') as Signal['disclosure'] }));
       setSignals(parsed);
+      // Fluency-only: a personality section published before the pivot must not stay silently
+      // live on a server page the UI no longer shows. Unpublish any such leftovers once.
+      if (FLUENCY_ONLY && parsed.some((sig) => sig.type !== 'statBadge' && sig.disclosure === 'public')) {
+        void (async () => {
+          try {
+            const userKey = await ensureUserKey(kv);
+            const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
+            await sync.setSignals(parsed
+              .filter((sig) => sig.type !== 'statBadge' && sig.disclosure === 'public')
+              .map((sig) => ({ type: sig.type, surfacedContent: sig.surfacedContent, disclosure: 'private' as const })));
+            const next = parsed.map((sig) =>
+              (sig.type !== 'statBadge' ? { ...sig, disclosure: 'private' as Signal['disclosure'], shareToken: null } : sig));
+            setSignals(next);
+            await kv.set('aibadges:signals', JSON.stringify(next));
+          } catch { /* offline or server error: retried next time the page opens */ }
+        })();
+      }
     }
     setPublishedStage((await kv.get('aibadges:publishedStage')) ?? '');
   }
@@ -162,8 +179,8 @@ export default function App() {
 
   return (
     <Shell>
-      <Tabs tab={tab} onPick={setTab} />
-      {tab === 'personality' && (<>
+      {!FLUENCY_ONLY && <Tabs tab={tab} onPick={setTab} />}
+      {!FLUENCY_ONLY && tab === 'personality' && (<>
       <div className="bb-eyebrow">Living profile · v{profile.version}</div>
       <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: '-0.01em', margin: '8px 0 6px' }}>How you think</h1>
       <p className="bb-muted" style={{ fontSize: 16, margin: 0, maxWidth: 580 }}>

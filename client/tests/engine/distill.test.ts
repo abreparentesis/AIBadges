@@ -12,7 +12,7 @@ const profile: Profile = {
 
 describe('distill', () => {
   it('produces private, schema-valid signals carrying the provenance label', () => {
-    const signals = distill(profile, '2026-06-05T00:00:00Z');
+    const signals = distill(profile, '2026-06-05T00:00:00Z', false);
     expect(signals.map(s => s.type).sort()).toEqual(['identityCard', 'trajectorySnippet']);
     for (const s of signals) {
       expect(SignalSchema.safeParse(s).success).toBe(true);
@@ -23,7 +23,7 @@ describe('distill', () => {
   });
 
   it('identityCard carries every thinking claim with its confidence', () => {
-    const card = distill(profile, '2026-06-05T00:00:00Z').find((s) => s.type === 'identityCard')!;
+    const card = distill(profile, '2026-06-05T00:00:00Z', false).find((s) => s.type === 'identityCard')!;
     const c = card.surfacedContent as Record<string, any>;
     expect(c.headline).toBe('Decomposes before acting');
     expect(c.thinking).toEqual([{ claim: 'Decomposes before acting', confidence: 'high' }]);
@@ -41,7 +41,7 @@ describe('distill', () => {
         },
       },
     };
-    const card = distill(withType, '2026-06-05T00:00:00Z').find((s) => s.type === 'typeCard');
+    const card = distill(withType, '2026-06-05T00:00:00Z', false).find((s) => s.type === 'typeCard');
     expect(card).toBeTruthy();
     expect(SignalSchema.safeParse(card).success).toBe(true);
     const c = card!.surfacedContent as Record<string, unknown>;
@@ -51,7 +51,7 @@ describe('distill', () => {
   });
 
   it('does not emit a statBadge signal when capability is absent', () => {
-    expect(distill(profile, '2026-06-05T00:00:00Z').some((s) => s.type === 'statBadge')).toBe(false);
+    expect(distill(profile, '2026-06-05T00:00:00Z', false).some((s) => s.type === 'statBadge')).toBe(false);
   });
 
   it('emits a correctly-shaped statBadge signal when capability is present', () => {
@@ -68,7 +68,7 @@ describe('distill', () => {
         domains: [{ name: 'software engineering', band: 'advanced', evidenceIds: ['e1'] }],
       },
     };
-    const signals = distill(withCapability, '2026-06-05T00:00:00Z');
+    const signals = distill(withCapability, '2026-06-05T00:00:00Z', false);
     const badge = signals.find((s) => s.type === 'statBadge');
     expect(badge).toBeTruthy();
     expect(SignalSchema.safeParse(badge).success).toBe(true);
@@ -86,7 +86,7 @@ describe('distill', () => {
       ...withCapability,
       capability: { ...withCapability.capability!, fluencyScore: 62 },
     };
-    const scoredBadge = distill(scored, '2026-06-05T00:00:00Z').find((s) => s.type === 'statBadge')!;
+    const scoredBadge = distill(scored, '2026-06-05T00:00:00Z', false).find((s) => s.type === 'statBadge')!;
     expect((scoredBadge.surfacedContent as Record<string, unknown>).fluencyScore).toBe(62);
   });
 
@@ -95,9 +95,29 @@ describe('distill', () => {
       code: 'INTJ', summary: 'Strategic.', confidence: 'high',
       axes: { EI: { letter: 'I', lean: 70, evidenceIds: [] }, SN: { letter: 'N', lean: 65, evidenceIds: [] }, TF: { letter: 'T', lean: 80, evidenceIds: [] }, JP: { letter: 'J', lean: 60, evidenceIds: [] } },
     } };
-    const card = distill(withType, '2026-06-05T00:00:00Z').find((s) => s.type === 'typeCard')!;
+    const card = distill(withType, '2026-06-05T00:00:00Z', false).find((s) => s.type === 'typeCard')!;
     const c = card.surfacedContent as Record<string, any>;
     expect(c.axes.TF.letter).toBe('T');
     expect(c.axes.EI.lean).toBe(70);
+  });
+});
+
+describe('distill in fluency-only mode (the shipping default)', () => {
+  it('emits only the statBadge — no personality-lens signal can ever be shared', () => {
+    const withCapability: Profile = {
+      ...profile,
+      type: { code: 'INTJ', summary: 's', confidence: 'low',
+        axes: { EI: { letter: 'I', lean: 70, evidenceIds: [] }, SN: { letter: 'N', lean: 60, evidenceIds: [] },
+          TF: { letter: 'T', lean: 75, evidenceIds: [] }, JP: { letter: 'J', lean: 60, evidenceIds: [] } } },
+      capability: {
+        aiFluency: {
+          delegation: { band: 'proficient', evidenceIds: [] }, description: { band: 'proficient', evidenceIds: [] },
+          discernment: { band: 'developing', evidenceIds: [] }, diligence: { band: 'developing', evidenceIds: [] },
+        },
+        yeggeStage: { stage: 3, evidenceIds: [] }, domains: [],
+      },
+    };
+    const signals = distill(withCapability, '2026-06-05T00:00:00Z', true);
+    expect(signals.map((s) => s.type)).toEqual(['statBadge']);
   });
 });
