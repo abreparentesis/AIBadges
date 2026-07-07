@@ -14,7 +14,7 @@ export interface BuildProfileOpts {
   version: number;
   now: string;
   modelProvenance: string;
-  fastModel?: string;
+  extractModel?: string;
   bestModel?: string;
   maxChars?: number;
   maxChunks?: number;
@@ -58,7 +58,7 @@ export function isEmptyProfile(
 export async function buildProfile(convos: RawConversation[], caller: ModelCaller, opts: BuildProfileOpts): Promise<Profile> {
   const fresh = await extractEvidence(convos, caller, {
     maxChars: opts.maxChars, maxChunks: opts.maxChunks, perConvoChars: opts.perConvoChars,
-    model: opts.fastModel, concurrency: opts.concurrency,
+    model: opts.extractModel, concurrency: opts.concurrency,
     onProgress: (done, total) => opts.onPhase?.({ phase: 'evidence', done, total }),
   });
 
