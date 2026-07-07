@@ -25,3 +25,9 @@ docs/handoff/
 docs/superpowers/
 docs/mockups/
 docs/2026-06-05-brainstorm-context.md
+
+# local tool state
+.impeccable/
+.playwright-mcp/
+client/.context/
+tmp/
