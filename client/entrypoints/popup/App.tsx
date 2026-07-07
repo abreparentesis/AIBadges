@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import '../../src/ui/theme.css';
 import { t } from '../../src/ui/tokens';
 import { chromeKv } from '../../src/store/chrome-kv';
-import { migrateLegacySlots } from '../../src/store/provider';
+import { migrateLegacySlots, runKey } from '../../src/store/provider';
 
 type Provider = 'claude' | 'chatgpt';
 type Mode = 'init' | 'starting' | 'running' | 'done' | 'error' | 'needclaude';
@@ -181,18 +181,17 @@ function ClaudePanel() {
 
   useEffect(() => {
     (async () => {
-      const r = await chrome.storage.local.get(['aibadges:status', 'aibadges:error', 'aibadges:progress', 'aibadges:startedAt']);
-      const status = r['aibadges:status'] as string | undefined;
+      const r = await chrome.storage.local.get([
+        runKey('status', 'claude'), runKey('error', 'claude'), runKey('progress', 'claude'), runKey('startedAt', 'claude'),
+      ]);
+      const status = r[runKey('status', 'claude')] as string | undefined;
       const haveClaude = (await latestVersionOf('claude')) > 0;
       setHasProfile(haveClaude);
-      startedAt.current = (r['aibadges:startedAt'] as number) || Date.now();
-      // `aibadges:status` is shared between both flows, so "done" only counts when a Claude
-      // profile actually exists — otherwise it's the ChatGPT flow's status and we start fresh.
-      if (status === 'done' && haveClaude) { setMode('done'); return; }
-      if (status === 'error') { setErr(String(r['aibadges:error'] || '')); setMode('error'); return; }
+      startedAt.current = (r[runKey('startedAt', 'claude')] as number) || Date.now();
+      if (status === 'error') { setErr(String(r[runKey('error', 'claude')] || '')); setMode('error'); return; }
       if (status === 'running') {
         if (await pingAliveClaude()) {
-          const pr = (r['aibadges:progress'] as Progress) ?? null;
+          const pr = (r[runKey('progress', 'claude')] as Progress) ?? null;
           setProgress(pr); lastPct.current = pct(pr);
           const elapsed = (Date.now() - startedAt.current) / 1000; const cur = pct(pr);
           if (cur > 3 && cur < 99) eta.current = { sec: Math.round((elapsed * (100 - cur)) / cur), at: Date.now() };
@@ -200,6 +199,8 @@ function ClaudePanel() {
         }
         void begin(); return;
       }
+      // A Claude profile is the ground truth for "done"; auto-start only when none exists yet.
+      if (haveClaude) { setMode('done'); return; }
       void begin();
     })();
     const onMsg = (m: any) => {
@@ -261,15 +262,21 @@ function ChatGptPanel() {
 
   useEffect(() => {
     (async () => {
-      const r = await chrome.storage.local.get(['aibadges:cg:running', 'aibadges:progress']);
+      const r = await chrome.storage.local.get([
+        'aibadges:cg:running', runKey('progress', 'chatgpt'), runKey('status', 'chatgpt'), runKey('error', 'chatgpt'),
+      ]);
       const haveChatGpt = (await latestVersionOf('chatgpt')) > 0;
       setHasProfile(haveChatGpt);
       // Reattach to an in-flight run from durable storage (the background persists cg:running +
       // progress), so reopening the popup mid-run shows the progress bar, not the start button.
       if (r['aibadges:cg:running']) {
         setMode('capturing');
-        const p = r['aibadges:progress'] as { done?: number; total?: number; phase?: string } | null;
+        const p = r[runKey('progress', 'chatgpt')] as { done?: number; total?: number; phase?: string } | null;
         if (p && typeof p.done === 'number') setProg({ done: p.done, total: p.total ?? 0, phase: p.phase });
+      } else if (r[runKey('status', 'chatgpt')] === 'error') {
+        // A run that failed while the popup was closed: show its (provider-correct) stored error.
+        setErr(String(r[runKey('error', 'chatgpt')] || ''));
+        setMode('error');
       } else if (haveChatGpt) {
         setMode('done');
       }

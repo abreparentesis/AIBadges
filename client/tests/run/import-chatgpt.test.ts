@@ -62,7 +62,7 @@ describe('importGptReply', () => {
     expect(kv.store['aibadges:profile:chatgpt:1']).toBeTruthy();
     expect(kv.store['aibadges:latestVersion:chatgpt']).toBe('1');
     expect(kv.store['aibadges:signals:chatgpt']).toBeTruthy();
-    expect(kv.store['aibadges:status']).toBe('done');
+    expect(kv.store['aibadges:status:chatgpt']).toBe('done');
     expect(kv.store[CAPTURE_KEY]).toBe(''); // raw chat payload dropped
   });
 
@@ -86,7 +86,7 @@ describe('importGptReply', () => {
     const kv = memKv({ [CAPTURE_KEY]: JSON.stringify(bundle) });
     const profile = await importGptReply(reply, { kv, now: '2026-06-08T00:00:00Z', fetchFn: async () => new Response('nope', { status: 500 }) });
     expect(profile.version).toBe(1);
-    expect(kv.store['aibadges:status']).toBe('done');
+    expect(kv.store['aibadges:status:chatgpt']).toBe('done');
   });
 
   it('throws when there is no capture to import against', async () => {

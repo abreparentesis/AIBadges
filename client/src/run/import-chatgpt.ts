@@ -4,6 +4,7 @@ import { ProfileStore } from '../store/local';
 import { chromeKv } from '../store/chrome-kv';
 import { ensureUserKey } from '../store/userkey';
 import { BackendSync, needsRepushKey } from '../sync/backend';
+import { runKey } from '../store/provider';
 import { BACKEND_URL, INVITE_TOKEN } from '../config';
 import type { CaptureBundle } from '../capture/chatgpt-export';
 import type { Profile } from '../engine/types';
@@ -56,7 +57,7 @@ export async function importGptReply(replyText: string, deps: ImportDeps = {}): 
     await kv.set(needsRepushKey('chatgpt'), '0'); // fresh push satisfies the post-delete repush guarantee
   } catch (e) { console.warn('[aibadges] sync failed (non-fatal):', (e as Error)?.message ?? 'unknown'); }
 
-  await kv.set('aibadges:status', 'done');
+  await kv.set(runKey('status', 'chatgpt'), 'done');
   await kv.set(CAPTURE_KEY, ''); // drop the raw-chat payload; loadCaptureBundle treats '' as absent
   return profile;
 }

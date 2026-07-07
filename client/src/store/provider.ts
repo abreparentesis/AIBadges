@@ -15,6 +15,14 @@ export const PROVIDER_LABEL: Record<Provider, string> = {
   chatgpt: 'ChatGPT',
 };
 
+/**
+ * Run-lifecycle storage keys, namespaced per provider so the two flows can
+ * never bleed state into each other (a ChatGPT error showing in the Claude
+ * panel, one provider's "done" masking the other's run).
+ */
+export type RunKeyName = 'status' | 'error' | 'progress' | 'startedAt';
+export const runKey = (name: RunKeyName, provider: Provider): string => `aibadges:${name}:${provider}`;
+
 /** Infer which provider produced a stored profile (legacy, pre-namespacing). */
 export function inferProvider(p: Profile): Provider {
   const fromEvidence = p.evidence?.[0]?.sourceRef?.provider;

@@ -1,4 +1,18 @@
 import { CG_WORKERS_KEY, batchOutKey } from '../src/capture/cg-keys';
+import { runKey, PROVIDERS } from '../src/store/provider';
+
+// Run-lifecycle keys are namespaced per provider (aibadges:status:claude vs :chatgpt etc.) so the
+// two flows can never bleed state into each other. The Claude flow owns the :claude keys; the
+// invisible ChatGPT autorun owns the :chatgpt keys.
+const CLAUDE_STATUS = runKey('status', 'claude');
+const CLAUDE_ERROR = runKey('error', 'claude');
+const CLAUDE_PROGRESS = runKey('progress', 'claude');
+const CLAUDE_STARTED = runKey('startedAt', 'claude');
+const CG_STATUS = runKey('status', 'chatgpt');
+const CG_ERROR = runKey('error', 'chatgpt');
+const CG_PROGRESS = runKey('progress', 'chatgpt');
+// The pre-namespacing shared keys; removed on startup after seeding (see restore()).
+const LEGACY_RUN_KEYS = ['aibadges:status', 'aibadges:error', 'aibadges:progress', 'aibadges:startedAt'];
 
 // Service worker: owns the action badge dot and run status/progress.
 // blue idle/rest → amber while profiling → green when a fresh profile is ready → blue again once
@@ -11,8 +25,8 @@ export default defineBackground(() => {
     chrome.action.setBadgeTextColor?.({ color: '#ffffff' });
     chrome.action.setTitle({ title });
   };
-  const idle = () => setBadge('●', '#0046ff', 'AI Fluency Index — click to profile your Claude history');
-  const running = () => setBadge('●', '#f5a623', 'AI Fluency Index — profiling your Claude history…');
+  const idle = () => setBadge('●', '#0046ff', 'AI Fluency Index — click to profile your AI history');
+  const running = (what = 'your AI history') => setBadge('●', '#f5a623', `AI Fluency Index — profiling ${what}…`);
   const done = () => setBadge('●', '#12b76a', 'AI Fluency Index — your profile is ready (click to open)');
   const error = () => setBadge('!', '#d92d20', 'AI Fluency Index — profiling failed (click to retry)');
 
@@ -23,7 +37,7 @@ export default defineBackground(() => {
   const arm = () => chrome.alarms.create(WATCHDOG, { when: Date.now() + WATCHDOG_MS });
   const disarm = () => chrome.alarms.clear(WATCHDOG);
   const failRun = (reason: string) => {
-    chrome.storage.local.set({ 'aibadges:status': 'error', 'aibadges:error': reason });
+    chrome.storage.local.set({ [CLAUDE_STATUS]: 'error', [CLAUDE_ERROR]: reason });
     error();
   };
 
@@ -106,7 +120,7 @@ export default defineBackground(() => {
   // Stuck ChatGPT run -> stop it: clear state, close the (invisible) worker tab, tell an open popup.
   const failCg = (reason: string) => {
     disarmCg(); void closeCgTab();
-    chrome.storage.local.set({ 'aibadges:status': 'error', 'aibadges:error': reason, 'aibadges:cg:running': 0, 'aibadges:progress': null });
+    chrome.storage.local.set({ [CG_STATUS]: 'error', [CG_ERROR]: reason, 'aibadges:cg:running': 0, [CG_PROGRESS]: null });
     chrome.storage.local.remove(['aibadges:cg:tabId', 'aibadges:cg:autorun']);
     error(); notifyPopup({ type: 'aibadges:cg-autorun-error', error: reason });
   };
@@ -114,19 +128,40 @@ export default defineBackground(() => {
   const cancelCg = async () => {
     disarmCg(); await closeCgTab();
     const slots = await chrome.storage.local.get(['aibadges:latestVersion:claude', 'aibadges:latestVersion:chatgpt', 'aibadges:latestVersion']);
-    const hasProfile = Object.values(slots).some((v) => Number(v ?? 0) > 0);
-    await chrome.storage.local.set({ 'aibadges:cg:running': 0, 'aibadges:progress': null, 'aibadges:status': hasProfile ? 'done' : 'idle' });
+    const hasChatGpt = Number(slots['aibadges:latestVersion:chatgpt'] ?? 0) > 0;
+    const hasAny = Object.values(slots).some((v) => Number(v ?? 0) > 0);
+    await chrome.storage.local.set({ 'aibadges:cg:running': 0, [CG_PROGRESS]: null, [CG_STATUS]: hasChatGpt ? 'done' : 'idle' });
     await chrome.storage.local.remove(['aibadges:cg:tabId', 'aibadges:cg:autorun']);
-    hasProfile ? done() : idle();
+    hasAny ? done() : idle();
   };
 
+  // Badge = the more urgent of the two flows' states: running > error > done > idle.
+  const badgeFromStatuses = (ss: unknown[]) => {
+    if (ss.includes('running')) running();
+    else if (ss.includes('error')) error();
+    else if (ss.includes('done')) done();
+    else idle();
+  };
   const restore = async () => {
-    const g = await chrome.storage.local.get(['aibadges:status', 'aibadges:cg:running']);
-    const s = g['aibadges:status'];
-    if (s === 'running') running(); else if (s === 'done') done(); else if (s === 'error') error(); else idle();
+    // Upgrade path from the shared-key era: seed each provider's status as "done" when a profile
+    // for it exists but its namespaced status was never written, then drop the legacy keys. Stale
+    // legacy running/error states die here — an in-flight run doesn't survive an upgrade anyway.
+    const seed = await chrome.storage.local.get([
+      CLAUDE_STATUS, CG_STATUS,
+      'aibadges:latestVersion:claude', 'aibadges:latestVersion:chatgpt', 'aibadges:cg:running',
+    ]);
+    const writes: Record<string, string> = {};
+    for (const p of PROVIDERS) {
+      if (seed[runKey('status', p)] == null && Number(seed[`aibadges:latestVersion:${p}`] ?? 0) > 0) {
+        writes[runKey('status', p)] = 'done';
+      }
+    }
+    if (Object.keys(writes).length) await chrome.storage.local.set(writes);
+    await chrome.storage.local.remove(LEGACY_RUN_KEYS);
+    badgeFromStatuses([writes[CLAUDE_STATUS] ?? seed[CLAUDE_STATUS], writes[CG_STATUS] ?? seed[CG_STATUS]]);
     // Resume watching an in-flight ChatGPT run after a service-worker restart, so a run that outlived
     // the worker (or a stale flag from a dead run) gets re-checked within one watchdog interval.
-    if (g['aibadges:cg:running']) armCg();
+    if (seed['aibadges:cg:running']) armCg();
   };
   chrome.runtime.onInstalled.addListener(idle);
   chrome.runtime.onStartup?.addListener(() => void restore());
@@ -161,7 +196,7 @@ export default defineBackground(() => {
       return;
     }
     if (a.name !== WATCHDOG) return;
-    const status = (await chrome.storage.local.get('aibadges:status'))['aibadges:status'];
+    const status = (await chrome.storage.local.get(CLAUDE_STATUS))[CLAUDE_STATUS];
     if (status !== 'running') { disarm(); return; } // run already finished — nothing to watch
     const tabs = await chrome.tabs.query({ url: 'https://claude.ai/*' });
     if (!tabs.length || tabs[0].id == null) {
@@ -227,16 +262,16 @@ export default defineBackground(() => {
         });
         armCg(); break;
       case 'aibadges:start':
-        chrome.storage.local.set({ 'aibadges:status': 'running', 'aibadges:startedAt': Date.now(), 'aibadges:progress': null });
-        blink = true; running(); arm(); break;
+        chrome.storage.local.set({ [CLAUDE_STATUS]: 'running', [CLAUDE_STARTED]: Date.now(), [CLAUDE_PROGRESS]: null });
+        blink = true; running('your Claude history'); arm(); break;
       case 'aibadges:progress':
         blink = !blink; setBadge(blink ? '●' : '', '#f5a623', 'AI Fluency Index — profiling your Claude history…'); arm(); break;
       case 'aibadges:phase':
-        chrome.storage.local.set({ 'aibadges:progress': { phase: msg.phase, done: msg.done, total: msg.total } }); arm(); break;
+        chrome.storage.local.set({ [CLAUDE_PROGRESS]: { phase: msg.phase, done: msg.done, total: msg.total } }); arm(); break;
       case 'aibadges:done':
-        disarm(); chrome.storage.local.set({ 'aibadges:status': 'done', 'aibadges:progress': null }); done(); break;
+        disarm(); chrome.storage.local.set({ [CLAUDE_STATUS]: 'done', [CLAUDE_PROGRESS]: null }); done(); break;
       case 'aibadges:error':
-        disarm(); chrome.storage.local.set({ 'aibadges:status': 'error', 'aibadges:error': String(msg.error ?? '') }); error(); break;
+        disarm(); chrome.storage.local.set({ [CLAUDE_STATUS]: 'error', [CLAUDE_ERROR]: String(msg.error ?? '') }); error(); break;
       case 'aibadges:opened':
         // Profile was opened — the "fresh" green dot has served its purpose; return to rest.
         idle(); break;
@@ -247,7 +282,7 @@ export default defineBackground(() => {
       case 'aibadges:cg-phase':
         // Persist ChatGPT run progress so reopening the popup mid-run shows the bar, not the button.
         // Progress means the worker is alive, so re-arm the ChatGPT watchdog.
-        chrome.storage.local.set({ 'aibadges:progress': { phase: msg.phase, done: msg.done, total: msg.total } }); armCg(); break;
+        chrome.storage.local.set({ [CG_PROGRESS]: { phase: msg.phase, done: msg.done, total: msg.total } }); armCg(); break;
       case 'aibadges:cg-heartbeat':
         // The worker polls a long-running reply: alive, just slow. Keep the watchdog off its back.
         armCg(); break;
@@ -257,8 +292,8 @@ export default defineBackground(() => {
         // it, and imports — the user never sees a chat. Store the worker tab id so Stop / the watchdog
         // can find and close exactly this tab (never the user's own ChatGPT tabs). Use the ChatGPT
         // watchdog (armCg), NOT the Claude arm() (which looks for a claude.ai tab and would false-fail).
-        chrome.storage.local.set({ 'aibadges:cg:autorun': 1, 'aibadges:cg:running': 1, 'aibadges:status': 'running', 'aibadges:progress': null });
-        blink = true; running();
+        chrome.storage.local.set({ 'aibadges:cg:autorun': 1, 'aibadges:cg:running': 1, [CG_STATUS]: 'running', [CG_PROGRESS]: null });
+        blink = true; running('your ChatGPT history');
         chrome.tabs.create({ url: 'https://chatgpt.com/', active: false }, (tab) => { if (tab?.id != null) chrome.storage.local.set({ 'aibadges:cg:tabId': tab.id }); });
         armCg(); break;
       case 'aibadges:cg-cancel':
@@ -270,14 +305,14 @@ export default defineBackground(() => {
         disarm(); disarmCg();
         if (sender.tab?.id != null) chrome.tabs.remove(sender.tab.id).catch(() => { /* already gone */ });
         void closeCgTab();
-        chrome.storage.local.set({ 'aibadges:status': 'done', 'aibadges:progress': null, 'aibadges:cg:running': 0 });
+        chrome.storage.local.set({ [CG_STATUS]: 'done', [CG_PROGRESS]: null, 'aibadges:cg:running': 0 });
         chrome.storage.local.remove('aibadges:cg:tabId'); done();
         chrome.tabs.create({ url: chrome.runtime.getURL('results.html') }); break;
       case 'aibadges:cg-autorun-error':
         disarm(); disarmCg();
         if (sender.tab?.id != null) chrome.tabs.remove(sender.tab.id).catch(() => { /* already gone */ });
         void closeCgTab();
-        chrome.storage.local.set({ 'aibadges:status': 'error', 'aibadges:error': String(msg.error ?? ''), 'aibadges:cg:running': 0 });
+        chrome.storage.local.set({ [CG_STATUS]: 'error', [CG_ERROR]: String(msg.error ?? ''), 'aibadges:cg:running': 0 });
         chrome.storage.local.remove('aibadges:cg:tabId'); error(); break;
     }
   });
