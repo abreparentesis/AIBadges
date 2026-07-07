@@ -1,15 +1,21 @@
 // LinkedIn integration is pure URL construction; nothing is fetched and nothing leaves
 // the device beyond the user opening linkedin.com themselves.
 
-export function certName(stage: number | string): string {
-  return `AI Fluency Index - Stage ${stage}`;
+export function certName(score: number | string, level: string): string {
+  return `AI Fluency Index — ${score}/100 (${level})`;
 }
 
-export function buildAddToProfileUrl(o: { stage: number | string; computedAt: string; shareUrl: string; token: string }): string {
+export function buildAddToProfileUrl(o: {
+  score: number | string;
+  level: string;
+  computedAt: string;
+  shareUrl: string;
+  token: string;
+}): string {
   const d = new Date(o.computedAt);
   const params = new URLSearchParams({
     startTask: 'CERTIFICATION_NAME',
-    name: certName(o.stage),
+    name: certName(o.score, o.level),
     organizationName: 'AI Fluency Index',
     issueYear: String(d.getUTCFullYear()),
     issueMonth: String(d.getUTCMonth() + 1),
@@ -19,11 +25,22 @@ export function buildAddToProfileUrl(o: { stage: number | string; computedAt: st
   return `https://www.linkedin.com/profile/add?${params.toString()}`;
 }
 
-export function buildShareOnLinkedInUrl(shareUrl: string): string {
-  return `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`;
+/**
+ * Opens LinkedIn's post composer prefilled with `text` (which must contain the share
+ * URL — LinkedIn unfurls the first URL into the OpenGraph card, so the badge image
+ * comes from our og endpoint rather than a manual attachment).
+ */
+export function buildShareOnLinkedInUrl(shareUrl: string, text?: string): string {
+  const body = text ? `${text}\n\n${shareUrl}` : shareUrl;
+  return `https://www.linkedin.com/feed/?shareActive=true&text=${encodeURIComponent(body)}`;
 }
 
-// True when a badge was published at some stage and the current profile disagrees.
-export function stageDrift(publishedStage: string, currentStage: number | string): boolean {
-  return publishedStage !== '' && publishedStage !== String(currentStage);
+/** Default post copy for the share composer. */
+export function defaultShareText(score: number | string, level: string): string {
+  return `I measured how I actually work with AI. My AI Fluency Index: ${score}/100 (${level}) — computed from my own chat history, with every claim backed by real quotes.`;
+}
+
+// True when a badge was published at some value and the current profile disagrees.
+export function stageDrift(published: string, current: number | string): boolean {
+  return published !== '' && published !== String(current);
 }

@@ -12,8 +12,15 @@ describe('renderBadgeSvg', () => {
     expect(svg).toContain('<svg');
     expect(svg).toContain('width="1200"');
     expect(svg).toContain('height="627"');
-    expect(svg).toContain('AI Fluency Index - Stage 5');
+    expect(svg).toContain('AI Fluency Index - Stage 5'); // legacy badge without a score
     expect(svg).toContain('AI FLUENCY INDEX');
+  });
+
+  it('leads with the 1-100 score and pushed level when present', () => {
+    const svg = renderBadgeSvg({ ...content, fluencyScore: 62, level: 'Intermediate' });
+    expect(svg).toContain('62/100');
+    expect(svg).toContain('Intermediate');
+    expect(svg).not.toContain('Stage 5');
   });
 
   it('renders one labelled bar per fluency dimension', () => {

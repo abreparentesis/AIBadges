@@ -2,7 +2,12 @@ import { Resvg } from '@resvg/resvg-js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-export type StatBadgeContent = { yeggeStage: number | string; aiFluency?: Record<string, unknown> };
+export type StatBadgeContent = {
+  yeggeStage: number | string;
+  fluencyScore?: number | string; // 1-100 headline (chat sources cap at 80); older badges lack it
+  level?: string;                 // human ladder name pushed by the client
+  aiFluency?: Record<string, unknown>;
+};
 
 const esc = (s: unknown): string =>
   String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]!));
@@ -19,10 +24,10 @@ const DIM_LABEL: Record<string, string> = {
 function levelName(stage: number): string {
   if (!Number.isFinite(stage) || stage < 1) return ''; // no tier claim without a real stage (fallback image)
   const s = Math.min(8, Math.max(1, Math.round(stage)));
-  if (s <= 2) return 'Explorer';
-  if (s <= 4) return 'Operator';
-  if (s <= 6) return 'Practitioner';
-  return 'Orchestrator';
+  if (s <= 2) return 'Beginner';
+  if (s <= 4) return 'Intermediate';
+  if (s <= 6) return 'Advanced';
+  return 'Expert';
 }
 
 // Certificate palette: near-white ground with a whisper of the brand hue, deep indigo ink,
@@ -39,7 +44,7 @@ const GROUND = '#FBFAFD';
 export function renderBadgeSvg(content: StatBadgeContent): string {
   const stage = esc(content.yeggeStage);
   const stageNum = Number(content.yeggeStage);
-  const tier = levelName(stageNum);
+  const tier = typeof content.level === 'string' && content.level ? content.level : levelName(stageNum);
   const f = (content.aiFluency ?? {}) as Record<string, unknown>;
   const hasBands = DIMS.some((d) => typeof f[d] === 'string');
 
@@ -93,7 +98,11 @@ export function renderBadgeSvg(content: StatBadgeContent): string {
   <text x="600" y="106" text-anchor="middle" font-family="Inter" font-size="23" font-weight="bold" letter-spacing="6" fill="${INK}">&#9679; AI FLUENCY INDEX</text>
   <line x1="470" y1="140" x2="730" y2="140" stroke="${HAIRLINE}" stroke-width="1"/>
   <text x="600" y="196" text-anchor="middle" font-family="Inter" font-size="19" letter-spacing="5" fill="${PURPLE}">CREDENTIAL</text>
-  <text x="600" y="290" text-anchor="middle" font-family="Besley" font-size="66" font-weight="bold" fill="${INK}">AI Fluency Index - Stage ${stage}</text>
+  <text x="600" y="290" text-anchor="middle" font-family="Besley" font-size="66" font-weight="bold" fill="${INK}">${
+    content.fluencyScore !== undefined && content.fluencyScore !== ''
+      ? `AI Fluency Index &#8212; ${esc(content.fluencyScore)}/100`
+      : `AI Fluency Index - Stage ${stage}`
+  }</text>
   <text x="600" y="342" text-anchor="middle" font-family="Inter" font-size="22" fill="${MUTED}">${subline}</text>
 ${dimensions}
   <line x1="120" y1="${provenanceY - 34}" x2="944" y2="${provenanceY - 34}" stroke="${HAIRLINE}" stroke-width="1"/>

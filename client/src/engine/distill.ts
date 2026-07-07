@@ -1,5 +1,6 @@
 import { Profile, Signal } from './types';
 import { lookupType } from './typeTable';
+import { namedLevel } from './levels';
 
 export const PROVENANCE_LABEL =
   'Self-computed in your own AI session. Not verified by us.';
@@ -41,6 +42,10 @@ export function distill(profile: Profile, now: string): Signal[] {
       ...base, id: `sig-stat-${profile.version}`, type: 'statBadge',
       surfacedContent: {
         yeggeStage: profile.capability.yeggeStage.stage,
+        // Headline score + human level travel with the badge so the share page and OG
+        // image can lead with them (older badges without these fall back to the stage).
+        ...(profile.capability.fluencyScore !== undefined ? { fluencyScore: profile.capability.fluencyScore } : {}),
+        level: namedLevel(profile.capability.yeggeStage.stage).name,
         aiFluency: {
           delegation: f.delegation.band, description: f.description.band,
           discernment: f.discernment.band, diligence: f.diligence.band,

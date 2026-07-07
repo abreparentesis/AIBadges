@@ -92,10 +92,10 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       if (ids.length >= 1) return 1;
       return 0;
     };
-    const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; note?: string; evidenceIds: string[] }) => {
+    const anchorBanded = (b: { band: (typeof capability.aiFluency.delegation)['band']; note?: string; nextStep?: string; evidenceIds: string[] }) => {
       const ids = keep(b.evidenceIds).filter(substantive);
       const idx = Math.max(0, Math.min(BAND_ORDER.indexOf(b.band), maxBandIdx(ids)));
-      return { band: BAND_ORDER[idx], ...(b.note ? { note: b.note } : {}), evidenceIds: ids };
+      return { band: BAND_ORDER[idx], ...(b.note ? { note: b.note } : {}), ...(b.nextStep ? { nextStep: b.nextStep } : {}), evidenceIds: ids };
     };
     const aiFluency = {
       delegation: anchorBanded(capability.aiFluency.delegation),
@@ -115,11 +115,15 @@ export function assembleProfile(parts: ProfileParts, opts: AssembleOpts): Profil
       stage: Math.max(1, Math.min(6, Math.round((avgBand / 4) * 6))),
       evidenceIds: [...new Set(dims.flatMap((d) => d.evidenceIds))],
     };
+    // Headline 1-100 score from the same evidence-capped bands. Chat ceiling is 80: the
+    // top 20 points belong to Orchestrator behavior (stages 7-8), observable only when an
+    // agentic source (Claude Code / Codex) is ingested. all-emerging → 20, all-advanced → 80.
+    const fluencyScore = Math.max(1, Math.min(80, Math.round((avgBand / 4) * 80)));
     const domains = capability.domains.flatMap((d) => {
       const ids = keep(d.evidenceIds);
       return ids.length === 0 ? [] : [{ ...d, evidenceIds: ids }];
     });
-    capabilityAnchored = { aiFluency, yeggeStage, domains };
+    capabilityAnchored = { fluencyScore, aiFluency, yeggeStage, domains };
   }
 
   // Store only the evidence actually referenced by surviving claims/axes/shifts, in original order.

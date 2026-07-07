@@ -26,9 +26,20 @@ export const ClaimSchema = z.object({
 
 // `note` is a one-sentence description of the recurring pattern that earns the band — the band must
 // match it. Optional so older profiles (without it) still validate.
-const BandedSchema = z.object({ band: BandSchema, note: z.string().optional(), evidenceIds: z.array(z.string()) });
+const BandedSchema = z.object({
+  band: BandSchema,
+  note: z.string().optional(),
+  // One concrete, personal action the user can take to move this dimension — written for
+  // the user in plain language (never referencing internal evidence ids).
+  nextStep: z.string().optional(),
+  evidenceIds: z.array(z.string()),
+});
 
 export const CapabilitySchema = z.object({
+  // 1-100 headline score derived from the four bands; chat-only sources cap at 80
+  // because Orchestrator behavior (stages 7-8) is not observable in chat. Optional:
+  // profiles computed before this field exists still parse.
+  fluencyScore: z.number().int().min(1).max(100).optional(),
   aiFluency: z.object({
     delegation: BandedSchema,
     description: BandedSchema,

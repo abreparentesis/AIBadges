@@ -5,7 +5,7 @@ import { lookupType } from '../../src/engine/typeTable';
 import { ensureUserKey } from '../../src/store/userkey';
 import { BackendSync, NEEDS_REPUSH_KEY, repushIfNeeded } from '../../src/sync/backend';
 import { BACKEND_URL, INVITE_TOKEN, shareUrl } from '../../src/config';
-import { buildAddToProfileUrl, buildShareOnLinkedInUrl, stageDrift } from '../../src/sync/linkedin';
+import { buildAddToProfileUrl, buildShareOnLinkedInUrl, defaultShareText, stageDrift } from '../../src/sync/linkedin';
 import { namedLevel } from '../../src/engine/levels';
 import { learningPath } from '../../src/engine/learningPath';
 import { t, bandColor } from '../../src/ui/tokens';
@@ -102,10 +102,10 @@ export default function App() {
       setSignals(next);
       await kv.set('aibadges:signals', JSON.stringify(next));
       if (sig.type === 'statBadge') {
-        const stage = disclosure === 'public'
-          ? String((sig.surfacedContent as { yeggeStage?: number | string }).yeggeStage ?? '') : '';
-        setPublishedStage(stage);
-        await kv.set('aibadges:publishedStage', stage);
+        const c = sig.surfacedContent as { fluencyScore?: number; yeggeStage?: number | string };
+        const published = disclosure === 'public' ? String(c.fluencyScore ?? c.yeggeStage ?? '') : '';
+        setPublishedStage(published);
+        await kv.set('aibadges:publishedStage', published);
       }
     } catch (e) { alert('Share update failed: ' + String(e)); } finally { setBusy(''); }
   }
@@ -125,12 +125,14 @@ export default function App() {
       const next = signals.map((s) => (s.type === 'statBadge' ? { ...s, disclosure: 'public' as Signal['disclosure'], shareToken: res?.shareToken ?? null } : s));
       setSignals(next);
       await kv.set('aibadges:signals', JSON.stringify(next));
-      const stage = String((sig.surfacedContent as { yeggeStage?: number | string }).yeggeStage ?? '');
-      setPublishedStage(stage);
-      await kv.set('aibadges:publishedStage', stage);
+      const c = sig.surfacedContent as { fluencyScore?: number; yeggeStage?: number | string; level?: string };
+      const published = String(c.fluencyScore ?? c.yeggeStage ?? '');
+      setPublishedStage(published);
+      await kv.set('aibadges:publishedStage', published);
       if (res?.shareToken && profile) {
         window.open(buildAddToProfileUrl({
-          stage, computedAt: profile.computedAt,
+          score: published, level: c.level ?? namedLevel(Number(c.yeggeStage) || 1).name,
+          computedAt: profile.computedAt,
           shareUrl: shareUrl(res.shareToken), token: res.shareToken,
         }), '_blank');
       }
@@ -279,17 +281,17 @@ export default function App() {
 
             <div className="bb-card" style={{ marginTop: 22, display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
               <div style={{ width: 108, height: 108, borderRadius: 18, background: 'linear-gradient(150deg,#3f86ff,#0046ff 55%,#103d9f)', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto' }}>
-                <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1 }}>{cap.yeggeStage.stage}</div>
-                <div style={{ fontSize: 10, opacity: 0.85, marginTop: 5, letterSpacing: '.08em', textTransform: 'uppercase' }}>Stage of 8</div>
+                <div style={{ fontSize: 34, fontWeight: 800, lineHeight: 1 }}>{cap.fluencyScore ?? cap.yeggeStage.stage * 10}</div>
+                <div style={{ fontSize: 10, opacity: 0.85, marginTop: 5, letterSpacing: '.08em', textTransform: 'uppercase' }}>of 100</div>
               </div>
               <div style={{ flex: 1, minWidth: 220 }}>
                 <div className="bb-eyebrow" style={{ color: t.blue }}>Overall level</div>
                 <div style={{ fontSize: 26, fontWeight: 700, margin: '6px 0 2px' }}>{level.name}</div>
-                <div style={{ fontSize: 12, color: t.g500 }}>Rolled up from your four fluencies below.</div>
+                <div style={{ fontSize: 12, color: t.g500 }}>Rolled up from your four fluencies below. Chat history can evidence at most 80 of 100 &mdash; the last 20 points live in agentic work.</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                  {(['Explorer', 'Operator', 'Practitioner', 'Orchestrator'] as const).map((n) => {
+                  {(['Beginner', 'Intermediate', 'Advanced', 'Expert'] as const).map((n) => {
                     const isCurrent = n === level.name;
-                    const locked = n === 'Orchestrator';
+                    const locked = n === 'Expert';
                     return (
                       <span key={n} style={{
                         fontSize: 12, fontWeight: 600, padding: '4px 11px', borderRadius: 50, display: 'inline-flex', alignItems: 'center', gap: 4,
@@ -317,7 +319,7 @@ export default function App() {
                   {atCeiling
                     ? <>You&rsquo;re at the top of the range chat can measure (stage {CHAT_CEIL} of 8). </>
                     : <>You&rsquo;re at stage {cap.yeggeStage.stage} of the {CHAT_CEIL} that chat can measure. </>}
-                  The top tier, <b>Orchestrator</b> (7&ndash;8), can&rsquo;t be seen in chat at all &mdash; it means directing autonomous agents across multi-step work, and unlocks only when you connect an agentic source like <b>Claude Code</b> or <b>Codex</b>.
+                  The top tier, <b>Expert</b>, can&rsquo;t be seen in chat at all &mdash; it means directing autonomous agents across multi-step work, and unlocks only when you connect an agentic source like <b>Claude Code</b> or <b>Codex</b>.
                 </div>
                 {stageQuotes.length > 0 && <Evidence quotes={stageQuotes} style={{ marginTop: 10 }} />}
               </div>
@@ -332,13 +334,14 @@ export default function App() {
               const sig = sigFor('statBadge');
               if (!sig || sig.disclosure !== 'public' || !sig.shareToken) return null;
               const link = shareUrl(sig.shareToken);
-              const drift = stageDrift(publishedStage, cap.yeggeStage.stage);
+              const scoreNow = cap.fluencyScore ?? cap.yeggeStage.stage * 10;
+              const drift = stageDrift(publishedStage, scoreNow);
               return (
                 <div style={{ margin: '0 0 16px' }}>
                   {drift && (
                     <div className="bb-card" style={{ marginBottom: 10, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', borderLeft: `4px solid ${t.blue}` }}>
                       <span style={{ fontSize: 13 }}>
-                        Your LinkedIn badge says Stage {publishedStage} &mdash; you&rsquo;re now at Stage {cap.yeggeStage.stage}.
+                        Your LinkedIn badge shows {publishedStage} &mdash; your current score is {scoreNow}/100.
                       </span>
                       <button type="button" className="bb-btn" onClick={() => void updateLinkedInBadge()} disabled={busy !== ''}
                         style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', borderRadius: 50, padding: '5px 14px', border: `1px solid ${t.g300}`, background: t.white }}>
@@ -347,12 +350,12 @@ export default function App() {
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <a href={buildAddToProfileUrl({ stage: cap.yeggeStage.stage, computedAt: profile.computedAt, shareUrl: link, token: sig.shareToken })}
+                    <a href={buildAddToProfileUrl({ score: scoreNow, level: level.name, computedAt: profile.computedAt, shareUrl: link, token: sig.shareToken })}
                       target="_blank" rel="noreferrer"
                       style={{ fontSize: 13, fontWeight: 600, textDecoration: 'none', borderRadius: 50, padding: '7px 16px', background: '#0A66C2', color: '#fff' }}>
                       Add to LinkedIn profile
                     </a>
-                    <a href={buildShareOnLinkedInUrl(link)} target="_blank" rel="noreferrer"
+                    <a href={buildShareOnLinkedInUrl(link, defaultShareText(scoreNow, level.name))} target="_blank" rel="noreferrer"
                       style={{ fontSize: 13, fontWeight: 600, textDecoration: 'none', borderRadius: 50, padding: '7px 16px', border: `1px solid ${t.g300}`, color: t.g700 }}>
                       Share on LinkedIn
                     </a>
@@ -373,6 +376,11 @@ export default function App() {
                     </div>
                     <div className="bb-muted" style={{ fontSize: 13, marginTop: 4 }}>{desc}</div>
                     {note && <div style={{ fontSize: 13, color: t.g700, marginTop: 8, lineHeight: 1.45 }}>{note}</div>}
+                    {cap.aiFluency[key].nextStep && (
+                      <div style={{ fontSize: 13, marginTop: 8, padding: '8px 12px', borderRadius: 10, background: t.g50, lineHeight: 1.45 }}>
+                        <b style={{ color: t.blue }}>Try next:</b> {cap.aiFluency[key].nextStep}
+                      </div>
+                    )}
                     {weak && <div style={{ fontSize: 11, color: t.g500, marginTop: 6, fontStyle: 'italic' }}>Only partly visible from chat &mdash; the real signal is off-platform.</div>}
                     {quotes.length > 0 && <Evidence quotes={quotes} style={{ marginTop: 10 }} />}
                   </div>
@@ -394,7 +402,12 @@ export default function App() {
                   <span style={{ fontSize: 13, fontWeight: 600, textTransform: 'capitalize', color: t.g700 }}>{s.dimension}</span>
                   <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', color: '#fff', background: bandColor[s.band] ?? t.g500, padding: '2px 9px', borderRadius: 50 }}>{s.band}</span>
                 </div>
-                <div style={{ fontSize: 15, lineHeight: 1.55, margin: '8px 0 10px' }}>{s.how}</div>
+                {cap.aiFluency[s.dimension]?.nextStep && (
+                  <div style={{ fontSize: 15, lineHeight: 1.55, margin: '8px 0 4px' }}>
+                    <b style={{ color: t.blue }}>Your next step:</b> {cap.aiFluency[s.dimension].nextStep}
+                  </div>
+                )}
+                <div style={{ fontSize: cap.aiFluency[s.dimension]?.nextStep ? 13 : 15, color: cap.aiFluency[s.dimension]?.nextStep ? t.g600 : undefined, lineHeight: 1.55, margin: '4px 0 10px' }}>{s.how}</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
                   {s.links.map((l) => (
                     <a key={l.url} href={l.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 500 }}>{l.label} &rarr;</a>

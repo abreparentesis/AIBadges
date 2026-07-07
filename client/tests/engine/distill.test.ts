@@ -77,8 +77,17 @@ describe('distill', () => {
     expect(badge!.provenanceLabel).toBe(PROVENANCE_LABEL);
     expect(badge!.surfacedContent).toEqual({
       yeggeStage: 4,
+      level: 'Intermediate', // human ladder name for stage 4
       aiFluency: { delegation: 'proficient', description: 'advanced', discernment: 'developing', diligence: 'emerging' },
     });
+
+    // when the engine computed a fluencyScore it travels with the badge
+    const scored = {
+      ...withCapability,
+      capability: { ...withCapability.capability!, fluencyScore: 62 },
+    };
+    const scoredBadge = distill(scored, '2026-06-05T00:00:00Z').find((s) => s.type === 'statBadge')!;
+    expect((scoredBadge.surfacedContent as Record<string, unknown>).fluencyScore).toBe(62);
   });
 
   it('typeCard carries the axes so the share card can show stat bars', () => {

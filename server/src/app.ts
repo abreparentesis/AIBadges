@@ -23,7 +23,10 @@ export function renderCardBody(type: string, content: Record<string, unknown>): 
   }
   if (type === 'statBadge') {
     const f = (content.aiFluency ?? {}) as Record<string, unknown>;
-    return `<div class="brand">Capability</div><p class="big">Stage ${esc(content.yeggeStage ?? '?')}</p>` +
+    const headline = content.fluencyScore !== undefined
+      ? `${esc(content.fluencyScore)}/100${content.level ? ` &#183; ${esc(content.level)}` : ''}`
+      : `Stage ${esc(content.yeggeStage ?? '?')}`;
+    return `<div class="brand">Capability</div><p class="big">${headline}</p>` +
       `<ul>${Object.entries(f).map(([k, v]) => `<li><b>${esc(k)}</b>: ${esc(v)}</li>`).join('')}</ul>`;
   }
   if (type === 'trajectorySnippet') {
