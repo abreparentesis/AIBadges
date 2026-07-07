@@ -25,6 +25,28 @@ export function evidencePrompt(convos: RawConversation[]): string {
   ].join('\n');
 }
 
+// Second extraction pass over the same transcripts, aimed at REACTION evidence only. Discernment
+// and diligence are the evidence-starved dimensions — one general pass reliably misses borderline
+// reaction moments, and a missed quote hard-caps a band. A dedicated sweep recovers them; the
+// caller unions and dedupes the two passes.
+export function evidenceReactionPrompt(convos: RawConversation[]): string {
+  return [
+    "Second pass: re-scan the SAME AI chat transcripts below ONLY for moments where the person REACTS to the AI's output.",
+    'That means: correcting it, disagreeing with it, rejecting or redoing a weak answer, catching an error or inconsistency,',
+    'narrowing an over-broad reply, challenging its reasoning, or verifying/cross-checking something it claimed (questioning',
+    'a source or number it gave, testing its output, asking whether it checked). These reaction moments are the strongest',
+    'capability signal and are easy to miss on a first pass. Do NOT list plain requests, fresh questions, or the person',
+    'supplying facts/context — only reactions to what the AI produced.',
+    'Conversations are numbered [1], [2], and so on. Quote the USER verbatim; never invent.',
+    'Return ONLY a JSON array (empty array if there are genuinely none). Each item:',
+    '{conversationLabel, timestamp, type, quote, summary} where conversationLabel is the [n] number,',
+    'and type is one of: decision, reasoning_move, episode, preference.',
+    '',
+    'TRANSCRIPTS:',
+    renderConvos(convos),
+  ].join('\n');
+}
+
 export function thinkingPrompt(evidence: EvidenceUnit[]): string {
   return [
     'From this evidence, describe how this person THINKS: reasoning style, decision patterns, intellectual character.',

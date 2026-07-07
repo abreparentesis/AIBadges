@@ -1,9 +1,11 @@
 import { ChatGPTCaptureAdapter } from './chatgpt';
 import { selectAcrossTimeline } from './select';
 import { buildChatGptExport } from './chatgpt-export';
-import { buildExtractionPrompt, buildSynthesisFromEvidence, buildAuditPrompt } from './chatgpt-prompt';
+import { buildExtractionPrompt, buildExtractionSecondSweep, buildSynthesisFromEvidence, buildAuditPrompt } from './chatgpt-prompt';
 import { setComposer, clickSend, hasChallenge } from './chatgpt-bridge';
 import { importGptReply, CAPTURE_KEY } from '../run/import-chatgpt';
+import { dedupeMoments, sameMoment, loadPool, savePool, mergePool, type PoolUnit } from '../engine/evidence-pool';
+import { chromeKv } from '../store/chrome-kv';
 import { CG_BATCH_OUT_PREFIX, CG_BATCH_CONVO_PREFIX, batchOutKey, batchConvoKey } from './cg-keys';
 import type { RawConversation } from './types';
 import type { CaptureBundle } from './chatgpt-export';
@@ -262,7 +264,9 @@ async function runTurnIn(ctx: TurnCtx, prompt: string, timeoutMs: number, notify
 
 // ---- batched map-reduce helpers ----
 export type RawUnit = { conversationId: string; quote: string; summary: string; type: string };
-type PooledUnit = RawUnit & { id: string };
+// timestamp is present on units re-injected from the persistent pool (their conversationId is the
+// REAL conversation id, not this capture's c1/c2 alias, so the importer can't date them by join).
+type PooledUnit = RawUnit & { id: string; timestamp?: string };
 
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -315,6 +319,35 @@ export function assemblePool(unitsByBatch: Record<string, RawUnit[]>, doneBatche
   return pooled;
 }
 
+const realIdOf = (idMap: Record<string, string>, alias: string): string =>
+  Object.prototype.hasOwnProperty.call(idMap, alias) ? idMap[alias] : alias;
+
+// Append the persistent pool's units (from previous runs) after this run's fresh units, skipping
+// moments the fresh extraction re-found. Ids continue the fresh numbering, so for a given
+// (unitsByBatch, priorPool) pair the ids are deterministic — which resume depends on. Prior units
+// carry their REAL conversation id + timestamp (this capture's c1/c2 aliases don't cover them).
+export function appendPriorPool(pooled: PooledUnit[], priorPool: PoolUnit[], idMap: Record<string, string>): PooledUnit[] {
+  const extras = priorPool
+    .filter((p) => !pooled.some((f) => realIdOf(idMap, f.conversationId) === p.sourceRef.conversationId && sameMoment(f, p)))
+    .map((p, i) => ({
+      id: `e${pooled.length + i + 1}`, conversationId: p.sourceRef.conversationId,
+      quote: p.quote, summary: p.summary, type: p.type, timestamp: p.timestamp,
+    }));
+  return [...pooled, ...extras];
+}
+
+// This run's fresh units as pool entries: real conversation ids, dated from the capture bundle.
+const EV_TYPES = ['decision', 'reasoning_move', 'episode', 'preference'] as const;
+export function poolFromRun(pooled: PooledUnit[], bundle: CaptureBundle): PoolUnit[] {
+  const createdAt = new Map(bundle.export.conversations.map((c) => [c.conversationId, c.createdAt]));
+  return pooled.map((u) => ({
+    timestamp: createdAt.get(u.conversationId) ?? bundle.capturedAt,
+    sourceRef: { provider: 'chatgpt' as const, conversationId: realIdOf(bundle.idMap, u.conversationId) },
+    type: (EV_TYPES as readonly string[]).includes(u.type) ? (u.type as PoolUnit['type']) : 'episode',
+    quote: u.quote, summary: u.summary,
+  }));
+}
+
 // Assemble the object the importer expects: the client-owned pooled evidence, the profile from
 // synthesis, and the AUDITED capability (re-judged bands + surviving ids) replacing synthesis's draft
 // aiFluency/domains. Any unparseable model reply falls back so a partial run still imports.
@@ -351,6 +384,8 @@ export interface AutorunCheckpoint {
   doneBatches: number[];    // batch indices whose evidence was extracted (completion may be out of order)
   skippedBatches: number[]; // batches that failed all retries and were skipped (coverage note)
   unitsByBatch: Record<string, RawUnit[]>; // per-batch raw units; ids are assigned at assembly time
+  priorPool?: PoolUnit[];   // the persistent-pool snapshot this run merged in — pinned so a resumed
+                            // run reproduces the exact same evidence ids the checkpointed synthesis saw
   synthText?: string;       // present once synthesis completed
   convoId?: string;         // the orchestrator's throwaway (synthesis/audit); deleted on resume
 }
@@ -360,6 +395,7 @@ export interface RunPlan {
   doneBatches: number[];
   skippedBatches: number[];
   unitsByBatch: Record<string, RawUnit[]>;
+  priorPool?: PoolUnit[];
   synthText?: string;
   staleConvoId?: string;
 }
@@ -388,6 +424,7 @@ export function planRun(raw: unknown, totalBatches: number, nowMs: number, maxAg
     doneBatches,
     skippedBatches,
     unitsByBatch: c.unitsByBatch,
+    priorPool: Array.isArray(c.priorPool) ? c.priorPool : undefined,
     synthText: typeof c.synthText === 'string' && c.synthText ? c.synthText : undefined,
     staleConvoId: staleId,
   };
@@ -427,7 +464,14 @@ export async function runExtractionBatch(batch: number, notify: Notify): Promise
     ctx.preTopId = await topConversationId(ctx.token);
     ctx.onBound = (id) => chrome.storage.local.set({ [batchConvoKey(batch)]: id });
     const reply = await runTurnIn(ctx, buildExtractionPrompt(subBundle), EXTRACT_TIMEOUT_MS, notify);
-    await write({ units: parseEvidence(reply.text) });
+    let units = parseEvidence(reply.text);
+    // Second, reaction-focused sweep in the same conversation: recovers the discernment/diligence
+    // moments a general pass under-samples. Best-effort — a failed sweep keeps the first pass.
+    try {
+      const sweep = await runTurnIn(ctx, buildExtractionSecondSweep(), EXTRACT_TIMEOUT_MS, notify);
+      units = dedupeMoments([...units, ...parseEvidence(sweep.text)], (u) => u.conversationId);
+    } catch (e) { console.warn('[aibadges] second extraction sweep failed (kept first pass)', batch, e); }
+    await write({ units });
   } catch (e) {
     console.error('[aibadges] chatgpt extraction batch failed', batch, e);
     await write({ failed: true });
@@ -539,6 +583,9 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   const doneBatches: number[] = [...plan.doneBatches];
   const skippedBatches: number[] = [...plan.skippedBatches];
   const unitsByBatch: Record<string, RawUnit[]> = { ...plan.unitsByBatch };
+  // Persistent evidence pool from previous runs. Pinned per run (and checkpointed) so a resume
+  // reproduces the exact evidence ids the checkpointed synthesis cited. Local-only, never synced.
+  const priorPool: PoolUnit[] = plan.priorPool ?? await loadPool(chromeKv, 'chatgpt');
   // Progress is counted in COMPLETED analysis steps (batches done or skipped, then synthesis, then
   // audit) so the popup's step labels stay truthful even when batches finish out of order.
   let done = doneBatches.length + skippedBatches.length + (plan.synthText ? 1 : 0);
@@ -553,6 +600,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   const ckpt = (synthText?: string): AutorunCheckpoint => ({
     v: 2, startedAt, totalBatches: batches.length, doneBatches: [...doneBatches],
     skippedBatches: [...skippedBatches], unitsByBatch,
+    ...(priorPool.length ? { priorPool } : {}),
     ...(synthText ? { synthText } : {}), ...(main.id ? { convoId: main.id } : {}),
   });
   const runTurn = (prompt: string, timeoutMs: number) => runTurnIn(main, prompt, timeoutMs, notify);
@@ -577,11 +625,14 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
       await clearCkpt();
       throw new Error('ChatGPT returned no usable evidence from your history.');
     }
+    // Fresh units + the persistent pool = what synthesis actually judges. Prior evidence keeps a
+    // band from dropping just because this run failed to re-find one borderline quote.
+    const allPooled = appendPriorPool(pooled, priorPool, bundle.idMap);
 
     let synthText = plan.synthText;
     if (!synthText) {
       try {
-        synthText = (await runTurn(buildSynthesisFromEvidence(pooled), REDUCE_TIMEOUT_MS)).text;
+        synthText = (await runTurn(buildSynthesisFromEvidence(allPooled), REDUCE_TIMEOUT_MS)).text;
       } catch {
         await saveCkpt(ckpt()); // evidence pool is safe; next run resumes at synthesis
         throw new Error('The analysis was interrupted during synthesis. Run again to continue from where it stopped.');
@@ -595,7 +646,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
       // The audit turn references the synthesis in-conversation. On resume the synthesis happened in
       // the deleted throwaway, so replay it first in this fresh conversation to restore context.
       if (plan.synthText && !main.lastNode) {
-        await runTurn(buildSynthesisFromEvidence(pooled), REDUCE_TIMEOUT_MS);
+        await runTurn(buildSynthesisFromEvidence(allPooled), REDUCE_TIMEOUT_MS);
       }
       auditText = (await runTurn(buildAuditPrompt(), REDUCE_TIMEOUT_MS)).text;
     } catch { /* audit failed twice — import the synthesis draft instead of losing the run */ }
@@ -605,7 +656,10 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
     //    abort an in-flight delete), then combine and import.
     if (main.id) await deleteConversation(main.id, token);
     await clearCkpt();
-    const profile = await importGptReply(combineForImport(pooled, synthText, auditText));
+    const profile = await importGptReply(combineForImport(allPooled, synthText, auditText));
+    // Persist the pool only for a KEPT profile — a discarded run must not grow it. Fresh units are
+    // re-keyed to real conversation ids so future runs (whose c1/c2 aliases differ) can dedupe.
+    await savePool(chromeKv, 'chatgpt', mergePool(priorPool, poolFromRun(pooled, bundle)));
     notify({ type: 'aibadges:done', version: profile.version });
     notify({ type: 'aibadges:cg-autorun-done', version: profile.version, skippedBatches: skippedBatches.length });
   } catch (e) {

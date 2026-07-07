@@ -1,7 +1,8 @@
 import type { RawConversation } from '../capture/types';
 import type { ModelCaller } from '../inference/types';
-import { Profile } from './types';
+import { EvidenceUnit, Profile } from './types';
 import { extractEvidence } from './evidence';
+import { dedupeMoments, type PoolUnit } from './evidence-pool';
 import { synthesize, type SynthesisDebug } from './synthesize';
 import { computeCapability } from './capability';
 import { assembleProfile } from './assemble';
@@ -23,6 +24,17 @@ export interface BuildProfileOpts {
   onSynthesisDebug?: (d: SynthesisDebug) => void;
   /** Override the product-wide FLUENCY_ONLY flag (tests exercise both modes). */
   fluencyOnly?: boolean;
+  /**
+   * Evidence pool from previous runs (already verified quotes). Merged with this run's freshly
+   * extracted units before synthesis so scores accumulate ground truth instead of re-rolling it.
+   */
+  priorEvidence?: PoolUnit[];
+  /**
+   * Receives the merged, deduped, re-id'd evidence set the synthesis actually saw — the caller
+   * persists it as the next run's priorEvidence. (The finished profile's evidence array is pruned
+   * to cited units only, so it cannot serve as the pool.)
+   */
+  onEvidencePool?: (units: EvidenceUnit[]) => void;
 }
 
 // A run must never overwrite a good profile with a contentless one, and must fail LOUDLY when
@@ -38,11 +50,23 @@ export function isEmptyProfile(
 }
 
 export async function buildProfile(convos: RawConversation[], caller: ModelCaller, opts: BuildProfileOpts): Promise<Profile> {
-  const evidence = await extractEvidence(convos, caller, {
+  const fresh = await extractEvidence(convos, caller, {
     maxChars: opts.maxChars, maxChunks: opts.maxChunks, perConvoChars: opts.perConvoChars,
     model: opts.fastModel, concurrency: opts.concurrency,
     onProgress: (done, total) => opts.onPhase?.({ phase: 'evidence', done, total }),
   });
+
+  // Union with the persistent pool from previous runs: dedupe by moment, restore chronological
+  // order (the prompts promise oldest-to-newest), and reassign run-scoped ids over the whole set.
+  // Fresh units come first into the dedupe so this run's (possibly longer) quote variant wins ties.
+  const merged = dedupeMoments(
+    [...fresh, ...(opts.priorEvidence ?? []).map((u) => ({ ...u, id: '' }))],
+    (u) => u.sourceRef.conversationId,
+  )
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+    .map((u, i) => ({ ...u, id: `e${i + 1}` }));
+  const evidence: EvidenceUnit[] = merged;
+  opts.onEvidencePool?.(evidence);
 
   opts.onPhase?.({ phase: 'synthesis', done: 0, total: 1 });
   // Capability is a secondary lens computed off the same evidence; run it concurrently with

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { parseEvidence, combineForImport, replyWaitDecision, planRun, assemblePool } from '../../src/capture/chatgpt-autorun';
+import { parseEvidence, combineForImport, replyWaitDecision, planRun, assemblePool, appendPriorPool, poolFromRun } from '../../src/capture/chatgpt-autorun';
+import type { PoolUnit } from '../../src/engine/evidence-pool';
 import { buildSynthesisFromEvidence } from '../../src/capture/chatgpt-prompt';
 
 describe('parseEvidence (map step)', () => {
@@ -175,5 +176,46 @@ describe('assemblePool (id-stable pooling across parallel batches)', () => {
   });
   it('returns [] when nothing completed (the all-batches-failed terminal case)', () => {
     expect(assemblePool({}, [])).toEqual([]);
+  });
+});
+
+describe('appendPriorPool / poolFromRun (persistent evidence pool)', () => {
+  const idMap = { c1: 'uuid-A', c2: 'uuid-B' };
+  const prior = (cid: string, quote: string): PoolUnit => ({
+    timestamp: '2026-02-01T00:00:00Z', sourceRef: { provider: 'chatgpt', conversationId: cid },
+    type: 'decision', quote, summary: 'from a past run',
+  });
+  const fresh = [{ id: 'e1', conversationId: 'c1', quote: 'a moment refound this run', summary: '', type: 'episode' }];
+
+  it('appends prior units after fresh ones with continuing ids, real conversation ids, and timestamps', () => {
+    const out = appendPriorPool(fresh, [prior('uuid-Z', 'an older moment only the pool knows')], idMap);
+    expect(out.map((u) => u.id)).toEqual(['e1', 'e2']);
+    expect(out[1]).toMatchObject({ conversationId: 'uuid-Z', timestamp: '2026-02-01T00:00:00Z' });
+  });
+
+  it('skips prior units the fresh extraction re-found (matched through the alias map)', () => {
+    const out = appendPriorPool(fresh, [prior('uuid-A', 'a moment refound this run')], idMap);
+    expect(out).toHaveLength(1);
+  });
+
+  it('id assignment is deterministic for a given (fresh, pool) pair — what resume depends on', () => {
+    const pool = [prior('uuid-Z', 'older moment one'), prior('uuid-Y', 'older moment two')];
+    expect(appendPriorPool(fresh, pool, idMap)).toEqual(appendPriorPool(fresh, pool, idMap));
+  });
+
+  it('poolFromRun re-keys fresh units to real ids, dates them from the capture, and normalizes types', () => {
+    const bundle = {
+      capturedAt: '2026-06-08T00:00:00Z', idMap,
+      export: {
+        version: 1, instructionsFor: 'aibadges-gpt',
+        conversations: [{ conversationId: 'c1', title: 't', createdAt: '2026-03-01T00:00:00Z', messages: [] }],
+      },
+    };
+    const units = poolFromRun([{ id: 'e1', conversationId: 'c1', quote: 'q', summary: 's', type: 'weird_type' }], bundle);
+    expect(units[0]).toEqual({
+      timestamp: '2026-03-01T00:00:00Z',
+      sourceRef: { provider: 'chatgpt', conversationId: 'uuid-A' },
+      type: 'episode', quote: 'q', summary: 's',
+    });
   });
 });

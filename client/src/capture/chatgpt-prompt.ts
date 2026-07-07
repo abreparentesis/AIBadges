@@ -93,6 +93,24 @@ export function buildExtractionPrompt(bundle: CaptureBundle): string {
   ].join('\n');
 }
 
+// Follow-up turn in the SAME conversation as the extraction: a reaction-focused second sweep.
+// Discernment and diligence are the evidence-starved dimensions; a general pass reliably misses
+// borderline reaction moments, and one missed quote hard-caps a band. The client unions and
+// dedupes both passes, so overlap is harmless — only genuinely NEW units matter here.
+export function buildExtractionSecondSweep(): string {
+  return [
+    'Second sweep over the SAME history you just processed. Re-scan it ONLY for moments where the person REACTS to the',
+    "AI's output: correcting it, disagreeing, rejecting or redoing a weak answer, catching an error or inconsistency,",
+    'narrowing an over-broad reply, challenging its reasoning, or verifying/cross-checking something it claimed',
+    '(questioning a source or number it gave, testing its output, asking whether it checked). These are the strongest',
+    'capability signals and are easy to miss on a first pass. Do NOT repeat units you already listed, and do NOT list',
+    'plain requests, fresh questions, or the person supplying facts/context. Quote the USER verbatim; never invent;',
+    'keep the same conversationId (c1/c2/...) values.',
+    `${JSON_RULES} Return an EMPTY evidence list if there is genuinely nothing new. Use exactly this shape:`,
+    `{${SHAPE_EVIDENCE}}`,
+  ].join('\n');
+}
+
 export const SYNTHESIS_PROMPT = [
   'Step 2 of 3: SYNTHESIS. Using ONLY the evidence units you just extracted (their e1, e2, ... ids), build the profile. Every scored item cites evidence ids.',
   SYNTHESIS_STEPS, '', CITATION_RULE, '',

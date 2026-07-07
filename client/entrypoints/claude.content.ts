@@ -2,6 +2,7 @@ import type { RawConversation } from '../src/capture/types';
 import { ClaudeCaptureAdapter } from '../src/capture/claude';
 import { InSessionClaudeCaller, isRateLimitError } from '../src/inference/in-session';
 import { buildProfile, isEmptyProfile } from '../src/engine/profile';
+import { loadPool, savePool, mergePool, type PoolUnit } from '../src/engine/evidence-pool';
 import { distill } from '../src/engine/distill';
 import { ProfileStore } from '../src/store/local';
 import { chromeKv } from '../src/store/chrome-kv';
@@ -62,6 +63,10 @@ export default defineContentScript({
 
         const version = (await store.latestVersion()) + 1;
         const now = new Date().toISOString();
+        // Evidence pool from previous runs: verified quotes accumulate across runs so a band can't
+        // drop just because a re-run failed to re-find one borderline quote. Local-only, never synced.
+        const priorPool = await loadPool(chromeKv, 'claude');
+        let runPool: PoolUnit[] = [];
         try {
           const profile = await buildProfile(convos, caller, {
             version, now,
@@ -72,6 +77,8 @@ export default defineContentScript({
             // caller is API-parallel, so 3-wide extraction keeps wall-clock roughly flat vs
             // the old 40-conversation run while more than doubling the window.
             maxChars: 48000, maxChunks: 6, perConvoChars: 2500, concurrency: 3,
+            priorEvidence: priorPool,
+            onEvidencePool: (units) => { runPool = units.map(({ id: _id, ...u }) => u); },
             onPhase: (p) => notify({ type: 'aibadges:phase', ...p }),
             onSynthesisDebug: (d) => { void chromeKv.set('aibadges:debug:synthesis', JSON.stringify(d)); },
           });
@@ -82,6 +89,8 @@ export default defineContentScript({
             throw new Error('The analysis produced no fluency result this run (usually a transient Claude error — try again in a minute). Your existing profile, if any, was kept.');
           }
           await store.saveProfileVersion(profile);
+          // Persist the pool only for a KEPT profile — a discarded run must not grow the pool.
+          if (runPool.length) await savePool(chromeKv, 'claude', mergePool(priorPool, runPool));
           await chromeKv.set('aibadges:signals:claude', JSON.stringify(distill(profile, now, undefined, 'Claude')));
           let synced: number | string;
           try {

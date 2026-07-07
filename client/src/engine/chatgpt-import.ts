@@ -78,7 +78,10 @@ export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: I
     const cid = cidRaw != null ? String(cidRaw) : '';
     // hasOwnProperty (not `idMap[cid]`) so a GPT-supplied "__proto__"/"constructor" can't resolve
     // to a prototype member. createdAtById is a Map, so its lookup is already safe.
-    const timestamp = createdAtById.get(cid) ?? toDate; // unknown/absent id -> window end date
+    // Units re-injected from the persistent pool carry their own timestamp (their conversationId
+    // is a REAL id from a past capture, not this capture's c1/c2 alias, so the join can't date them).
+    const explicit = typeof e.timestamp === 'string' && e.timestamp ? e.timestamp : null;
+    const timestamp = explicit ?? createdAtById.get(cid) ?? toDate; // unknown/absent id -> window end date
     const realId = Object.prototype.hasOwnProperty.call(bundle.idMap, cid) ? bundle.idMap[cid] : cid;
     const ty = String(e.type ?? '').toLowerCase();
     const type = (EV_TYPES as readonly string[]).includes(ty) ? (ty as EvidenceUnit['type']) : 'episode';

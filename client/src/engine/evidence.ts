@@ -3,7 +3,8 @@ import type { ModelCaller } from '../inference/types';
 import { EvidenceUnit, EvidenceUnitSchema } from './types';
 import { chunkConversations } from './chunk';
 import { parseJsonResponse } from './json';
-import { evidencePrompt } from '../prompts';
+import { evidencePrompt, evidenceReactionPrompt } from '../prompts';
+import { dedupeMoments } from './evidence-pool';
 import { mapLimit } from './parallel';
 import { isRateLimitError } from '../inference/in-session';
 
@@ -84,14 +85,22 @@ export async function extractEvidence(convos: RawConversation[], caller: ModelCa
   let chunks = chunkConversations(prepared, opts.maxChars ?? 8000);
   if (opts.maxChunks && chunks.length > opts.maxChunks) chunks = chunks.slice(0, opts.maxChunks);
 
-  opts.onProgress?.(0, chunks.length);
+  // Two passes per chunk: a general sweep, then a reaction-focused one (corrections, pushback,
+  // verification — the evidence the general pass reliably under-samples). Unioned + deduped below,
+  // this is what keeps thin dimensions from flapping between runs on one missed quote.
+  const tasks = chunks.flatMap((chunk) => [
+    { chunk, prompt: evidencePrompt(chunk) },
+    { chunk, prompt: evidenceReactionPrompt(chunk) },
+  ]);
+
+  opts.onProgress?.(0, tasks.length);
   let completed = 0;
   let dropped = 0;
 
-  const perChunk = await mapLimit(chunks, opts.concurrency ?? 4, async (chunk) => {
+  const perChunk = await mapLimit(tasks, opts.concurrency ?? 4, async ({ chunk, prompt }) => {
     const units: Array<Omit<RawEvidence, 'conversationLabel'> & { conversationId: string }> = [];
     try {
-      const raw = parseJsonResponse(await caller.complete(evidencePrompt(chunk), { model: opts.model }));
+      const raw = parseJsonResponse(await caller.complete(prompt, { model: opts.model }));
       if (Array.isArray(raw)) {
         const byLabel = new Map<number, RawConversation>();
         chunk.forEach((c, i) => byLabel.set(i + 1, c));
@@ -113,25 +122,27 @@ export async function extractEvidence(convos: RawConversation[], caller: ModelCa
       if (isRateLimitError(e)) throw e; // a usage cap won't clear by skipping — fail fast
       /* otherwise skip this chunk */
     }
-    opts.onProgress?.(++completed, chunks.length);
+    opts.onProgress?.(++completed, tasks.length);
     return units;
   });
 
   if (dropped > 0) console.warn(`[aibadges] dropped ${dropped} unverifiable quote(s)`);
 
+  // Union the two passes: the reaction sweep re-finds moments the general pass also caught, so
+  // collapse same-conversation near-identical quotes before assigning run-scoped ids.
+  const deduped = dedupeMoments(perChunk.flat(), (u) => u.conversationId);
+
   const all: EvidenceUnit[] = [];
   let n = 0;
-  for (const chunkUnits of perChunk) {
-    for (const u of chunkUnits) {
-      const parsed = EvidenceUnitSchema.safeParse({
-        id: `e${n + 1}`, timestamp: u.timestamp,
-        sourceRef: { provider: 'claude' as const, conversationId: u.conversationId },
-        type: u.type, quote: u.quote, summary: u.summary,
-      });
-      if (!parsed.success) continue;
-      n += 1;
-      all.push(parsed.data);
-    }
+  for (const u of deduped) {
+    const parsed = EvidenceUnitSchema.safeParse({
+      id: `e${n + 1}`, timestamp: u.timestamp,
+      sourceRef: { provider: 'claude' as const, conversationId: u.conversationId },
+      type: u.type, quote: u.quote, summary: u.summary,
+    });
+    if (!parsed.success) continue;
+    n += 1;
+    all.push(parsed.data);
   }
   return all;
 }

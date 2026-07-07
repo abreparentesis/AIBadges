@@ -16,11 +16,17 @@ describe('extractEvidence', () => {
     expect(units[1].sourceRef.conversationId).toBe('c2');
   });
 
-  it('calls the model once per chunk', async () => {
+  it('calls the model twice per chunk (general pass + reaction-focused sweep)', async () => {
     let calls = 0;
     const counting: ModelCaller = { complete: async () => { calls++; return evidenceResponse; } };
     await extractEvidence(transcripts, counting, { maxChars: 1 });
-    expect(calls).toBe(2);
+    expect(calls).toBe(4); // 2 chunks x 2 passes
+  });
+
+  it('dedupes units the two passes both found (same conversation, same quote)', async () => {
+    // Both passes return the identical fixture, so without dedupe every unit would appear twice.
+    const units = await extractEvidence(transcripts, caller, { maxChars: 100000 });
+    expect(units).toHaveLength(2);
   });
 
   it('skips non-array model output', async () => {
