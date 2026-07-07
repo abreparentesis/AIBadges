@@ -30,7 +30,10 @@ export default defineBackground(() => {
   // we can tell a live-but-slow run (long reply waits) from a dead one (tab redirected to a login
   // host where our script never loads, tab crashed, or a hung fetch) without false-failing.
   const CG_WATCHDOG = 'aibadges-cg-watchdog';
-  const CG_WATCHDOG_MS = 90000; // > the longest single reply wait; re-armed while the tab stays alive
+  // Re-armed by cg-phase AND by the per-poll cg-heartbeat the worker emits during long reply waits.
+  // Must exceed the worst heartbeat gap, which in a throttled hidden tab can stretch to ~60s per
+  // timer tick — 90s here used to kill perfectly healthy multi-minute synthesis turns.
+  const CG_WATCHDOG_MS = 240000;
   const armCg = () => chrome.alarms.create(CG_WATCHDOG, { when: Date.now() + CG_WATCHDOG_MS });
   const disarmCg = () => chrome.alarms.clear(CG_WATCHDOG);
   const notifyPopup = (m: Record<string, unknown>) => chrome.runtime.sendMessage(m, () => void chrome.runtime.lastError);
@@ -143,6 +146,9 @@ export default defineBackground(() => {
         // Persist ChatGPT run progress so reopening the popup mid-run shows the bar, not the button.
         // Progress means the worker is alive, so re-arm the ChatGPT watchdog.
         chrome.storage.local.set({ 'aibadges:progress': { phase: msg.phase, done: msg.done, total: msg.total } }); armCg(); break;
+      case 'aibadges:cg-heartbeat':
+        // The worker polls a long-running reply: alive, just slow. Keep the watchdog off its back.
+        armCg(); break;
       case 'aibadges:cg-autorun':
         // Invisible ChatGPT run: open chatgpt.com in a BACKGROUND tab (active:false) with the flag the
         // content script checks on load. It captures, analyzes in a throwaway conversation, deletes
