@@ -24,7 +24,9 @@ import type { CaptureBundle } from '../run/import-chatgpt';
 type Notify = (m: Record<string, unknown>) => void;
 
 const BASE = 'https://chatgpt.com';
-const TOTAL_CONVOS = 90;           // captured across the whole history (was a single-prompt cap of 30)
+const TOTAL_CONVOS = 60;           // two clean extraction batches; 90 cost a third multi-minute GPT turn
+                                   // for little band movement, and 60 sits closer to the Claude path's 40
+                                   // (smaller cross-provider window gap)
 const BATCH_SIZE = 30;             // conversations per extraction turn (map step): small enough that one
                                    // batch's evidence reply won't hit the model's output limit and truncate
 const PER_CONVO_CHARS = 2500;      // user-centric capture packs a chat into far less than the old 4000

@@ -287,7 +287,19 @@ function ChatGptPanel() {
       {mode === 'capturing' && (
         <div>
           <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>{prog?.phase === 'analysis' ? 'Analyzing in your ChatGPT…' : 'Reading your ChatGPT history…'}</div>
-          <div style={{ fontSize: 13, color: t.g600, marginBottom: 12 }}>{prog?.phase === 'analysis' ? 'Running in a background tab, cleans up after itself.' : (prog ? `${prog.done} / ${prog.total} conversations` : 'Starting…')}</div>
+          <div style={{ fontSize: 13, color: t.g600, marginBottom: 12 }}>
+            {prog?.phase === 'analysis'
+              ? (() => {
+                  // total = extraction batches + synthesis + audit; naming the step makes a
+                  // multi-minute GPT-5.5 turn read as progress, not a hang.
+                  const total = prog.total || 4;
+                  const batches = Math.max(1, total - 2);
+                  if (prog.done < batches) return `Step ${prog.done + 1} of ${total}: extracting evidence (batch ${prog.done + 1}/${batches}) — a few minutes per step`;
+                  if (prog.done === batches) return `Step ${prog.done + 1} of ${total}: scoring your four fluencies — the longest step`;
+                  return `Step ${Math.min(prog.done + 1, total)} of ${total}: adversarial audit of the scores`;
+                })()
+              : (prog ? `${prog.done} / ${prog.total} conversations` : 'Starting…')}
+          </div>
           <div style={{ height: 8, background: t.g100, borderRadius: 50, overflow: 'hidden' }}>
             <div className="bb-bar-fill" style={{ height: '100%', width: `${Math.max(3, Math.min(100, p))}%`, background: t.purple, borderRadius: 50, transition: 'width .4s ease' }} />
           </div>
