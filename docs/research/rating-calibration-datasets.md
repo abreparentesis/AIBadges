@@ -40,3 +40,33 @@ familiarity then anchors the scale externally.
 Caveat: WildChat users (logged-out ChatGPT, 2023-24) skew casual relative to our real
 users; treat absolute band thresholds with suspicion and trust relative discrimination.
 `client/scripts/wildchat-prep.ts` implements the per-user sampling.
+
+## Results: 20-user GPT-5.5 distribution (2026-07-07)
+
+Twenty synthetic users (15-39 conversations each) through the full pipeline via
+`eval-api.ts` (openai/gpt-5.5, high effort). Aggregate with
+`python3 scripts/wildchat-aggregate.py`; per-user reports in `client/eval/wildchat/u*/`.
+
+| Dimension | emerging | developing | proficient | advanced |
+|---|---|---|---|---|
+| delegation | 0 | 13 | 7 | 0 |
+| description | 0 | 10 | 9 | 1 |
+| discernment | 10 | 9 | 0 | 1 |
+| diligence | 13 | 7 | 0 | 0 |
+
+Yegge stages: 2 ×5 · 3 ×11 · 4 ×3 · 5 ×1. A bell around stage 3 with a thin high tail.
+
+Reading, for badge thresholds on the GPT-5.5 path:
+- "Proficient" delegation/description ≈ top third of casual users; "advanced" anywhere is
+  a ~5% event (2 band-instances in 80). Diligence above developing did not occur at all in
+  this population — any diligence signal is exceptional.
+- Discrimination works: one user (u3, stage 5) earned an advanced discernment while five
+  users sit at stage 2 with near-uniform emerging/developing rows.
+- Cross-model note (u1/u2 vs the audited Claude staged run): identical profile shape and
+  stages; GPT-5.5 sat +1 band on soft boundaries, most likely because the staged run used
+  an independent fresh audit agent (stronger deflator) vs the in-run self-audit.
+- Run-to-run stability: u1 was scored twice (a flaky first run); delegation flipped
+  proficient→developing between runs. Soft-boundary bands are ±1 band across reruns;
+  threshold logic should not hang product decisions on a single band edge.
+- One run in 21 produced an empty capability section (model step failed all retries; the
+  engine dropped the section rather than fabricate). Rerunning fixed it.

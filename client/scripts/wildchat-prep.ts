@@ -53,14 +53,19 @@ function clip(c: RawConversation): RawConversation {
 async function fetchRows(): Promise<WildRow[]> {
   const rows: WildRow[] = [];
   for (let offset = 0; offset < ROWS; offset += PAGE) {
-    const res = await fetch(`${API}&offset=${offset}&length=${PAGE}`);
-    if (!res.ok) {
-      console.error(`rows API ${res.status} at offset ${offset}; continuing with ${rows.length} rows`);
-      break;
+    let got = false;
+    for (let attempt = 1; attempt <= 3 && !got; attempt++) {
+      const res = await fetch(`${API}&offset=${offset}&length=${PAGE}`).catch(() => null);
+      if (res?.ok) {
+        const data = (await res.json()) as any;
+        for (const r of data.rows ?? []) rows.push(r.row as WildRow);
+        got = true;
+        if ((data.rows ?? []).length < PAGE) return rows;
+      } else {
+        await new Promise((r) => setTimeout(r, 1000 * attempt));
+      }
     }
-    const data = (await res.json()) as any;
-    for (const r of data.rows ?? []) rows.push(r.row as WildRow);
-    if ((data.rows ?? []).length < PAGE) break;
+    if (!got) console.error(`rows API failed 3x at offset ${offset}; skipping page`);
   }
   return rows;
 }
