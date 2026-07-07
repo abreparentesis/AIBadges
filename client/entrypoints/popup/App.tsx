@@ -1,13 +1,24 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import '../../src/ui/theme.css';
 import { t } from '../../src/ui/tokens';
+import { chromeKv } from '../../src/store/chrome-kv';
+import { migrateLegacySlots } from '../../src/store/provider';
 
 type Provider = 'claude' | 'chatgpt';
 type Mode = 'init' | 'starting' | 'running' | 'done' | 'error' | 'needclaude';
 type Progress = { phase: 'capture' | 'evidence' | 'synthesis'; done: number; total: number } | null;
 
+// One copy system for both providers: same run title, same phase vocabulary, same done/error
+// cards. Only the honest behavioral differences remain (Claude must keep its tab open and runs
+// in-session; ChatGPT runs in a background tab and can be stopped).
+const RUN_TITLE: Record<Provider, string> = {
+  claude: 'Profiling your Claude history…',
+  chatgpt: 'Profiling your ChatGPT history…',
+};
 const PHASE_LABEL: Record<string, string> = {
-  capture: 'Reading your conversations', evidence: 'Analyzing how you think', synthesis: 'Synthesizing your profile',
+  capture: 'Reading your conversations',
+  evidence: 'Extracting evidence from your conversations',
+  synthesis: 'Scoring your four fluencies',
 };
 
 function pct(p: Progress): number {
@@ -28,6 +39,12 @@ async function activeUrl(): Promise<string> {
 }
 function openResults() { chrome.tabs.create({ url: chrome.runtime.getURL('results.html') }); window.close(); }
 
+async function latestVersionOf(provider: Provider): Promise<number> {
+  const key = `aibadges:latestVersion:${provider}`;
+  const r = await chrome.storage.local.get(key);
+  return Number(r[key] ?? '0');
+}
+
 // ---------------------------------------------------------------------------
 
 export default function App() {
@@ -36,6 +53,9 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      // Panels key their "profile exists" checks on the provider-namespaced slots, so make sure
+      // any pre-split profile has been migrated before they mount (idempotent; results does it too).
+      await migrateLegacySlots(chromeKv);
       const url = await activeUrl();
       if (url.startsWith('https://chatgpt.com/') || url.startsWith('https://chat.openai.com/')) setProvider('chatgpt');
       else setProvider('claude');
@@ -78,6 +98,45 @@ function ProviderTabs({ active, onPick }: { active: Provider; onPick: (p: Provid
   );
 }
 
+// ---- shared cards: identical end states for both providers ----------------
+
+function DoneCard({ onRerun }: { onRerun: () => void }) {
+  return (
+    <div>
+      <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Your profile is ready</div>
+      <div style={{ fontSize: 13, color: t.g600, marginBottom: 14 }}>Open it, or re-run with your latest conversations.</div>
+      <button className="bb-btn bb-btn-primary" style={{ width: '100%', marginBottom: 8 }} onClick={openResults}>Open profile</button>
+      <button className="bb-btn bb-btn-secondary" style={{ width: '100%' }} onClick={onRerun}>Re-run the profiling</button>
+    </div>
+  );
+}
+
+function ErrorCard({ err, onRetry }: { err: string; onRetry: () => void }) {
+  return (
+    <div>
+      <Row dot={t.error}><span style={{ color: t.error, fontWeight: 500 }}>Profiling failed.</span>{err ? <span style={{ color: t.g600 }}> {err}</span> : null}</Row>
+      <button className="bb-btn bb-btn-primary" style={{ width: '100%', marginTop: 12 }} onClick={onRetry}>Try again</button>
+    </div>
+  );
+}
+
+function ProgressBar({ value }: { value: number }) {
+  return (
+    <div style={{ height: 8, background: t.g100, borderRadius: 50, overflow: 'hidden' }}>
+      <div className="bb-bar-fill" style={{ height: '100%', width: `${Math.max(3, Math.min(100, value))}%`, background: t.purple, borderRadius: 50, transition: 'width .4s ease' }} />
+    </div>
+  );
+}
+
+// Shown above a running re-run so the previous profile stays one click away, on both providers.
+function OpenCurrentProfile() {
+  return (
+    <button className="bb-btn bb-btn-secondary bb-btn-sm" style={{ width: '100%', marginBottom: 12 }} onClick={openResults}>
+      Open your current profile
+    </button>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Claude: in-session profiling (unchanged behavior — auto-starts when a profile isn't ready).
 
@@ -99,6 +158,7 @@ async function startClaudeRun(): Promise<boolean> {
 function ClaudePanel() {
   const [mode, setMode] = useState<Mode>('init');
   const [progress, setProgress] = useState<Progress>(null);
+  const [hasProfile, setHasProfile] = useState(false);
   const [err, setErr] = useState('');
   const [nowTs, setNowTs] = useState(Date.now());
   const startedAt = useRef(Date.now());
@@ -123,8 +183,12 @@ function ClaudePanel() {
     (async () => {
       const r = await chrome.storage.local.get(['aibadges:status', 'aibadges:error', 'aibadges:progress', 'aibadges:startedAt']);
       const status = r['aibadges:status'] as string | undefined;
+      const haveClaude = (await latestVersionOf('claude')) > 0;
+      setHasProfile(haveClaude);
       startedAt.current = (r['aibadges:startedAt'] as number) || Date.now();
-      if (status === 'done') { setMode('done'); return; }
+      // `aibadges:status` is shared between both flows, so "done" only counts when a Claude
+      // profile actually exists — otherwise it's the ChatGPT flow's status and we start fresh.
+      if (status === 'done' && haveClaude) { setMode('done'); return; }
       if (status === 'error') { setErr(String(r['aibadges:error'] || '')); setMode('error'); return; }
       if (status === 'running') {
         if (await pingAliveClaude()) {
@@ -141,7 +205,7 @@ function ClaudePanel() {
     const onMsg = (m: any) => {
       if (m?.type === 'aibadges:phase') { const pr = { phase: m.phase, done: m.done, total: m.total }; setProgress(pr); recomputeEta(pr); }
       else if (m?.type === 'aibadges:start') { startedAt.current = Date.now(); lastPct.current = 0; eta.current = null; setProgress(null); setMode('running'); }
-      else if (m?.type === 'aibadges:done') setMode('done');
+      else if (m?.type === 'aibadges:done') { setHasProfile(true); setMode('done'); }
       else if (m?.type === 'aibadges:error') { setErr(String(m.error || '')); setMode('error'); }
     };
     chrome.runtime.onMessage.addListener(onMsg);
@@ -157,38 +221,25 @@ function ClaudePanel() {
 
   return (
     <div>
+      {hasProfile && running && <OpenCurrentProfile />}
+
       {running && (
         <div>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Profiling your Claude history…</div>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>{RUN_TITLE.claude}</div>
           <div style={{ fontSize: 13, color: t.g600, marginBottom: 12 }}>{progress ? PHASE_LABEL[progress.phase] : 'Starting…'}</div>
-          <div style={{ height: 8, background: t.g100, borderRadius: 50, overflow: 'hidden' }}>
-            <div className="bb-bar-fill" style={{ height: '100%', width: `${Math.max(3, Math.min(100, p))}%`, background: t.blue, borderRadius: 50, transition: 'width .4s ease' }} />
-          </div>
+          <ProgressBar value={p} />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: t.g500, marginTop: 6 }}>
             <span>{Math.round(p)}%</span><span>{etaText}</span>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 14, fontSize: 12.5, color: '#7a4a12', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '9px 11px' }}>
             <span style={{ flex: '0 0 auto' }}>⚠️</span>
-            <span><b>Keep this Claude.ai tab open</b> until it finishes. The analysis runs inside your session, so closing the tab stops it. You can safely close this popup; the run keeps going in the background and the icon turns green when it’s ready.</span>
+            <span><b>Keep this Claude.ai tab open</b> until it finishes. The analysis runs inside your session, so closing the tab stops it. You can close this popup; the run keeps going and the icon turns green when it’s ready. Nothing is added to your Claude history, and your chats are never sent to our servers.</span>
           </div>
         </div>
       )}
 
-      {mode === 'done' && (
-        <div>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Your profile is ready</div>
-          <div style={{ fontSize: 13, color: t.g600, marginBottom: 14 }}>Open it, or re-run with your latest conversations.</div>
-          <button className="bb-btn bb-btn-primary" style={{ width: '100%', marginBottom: 8 }} onClick={openResults}>Open profile</button>
-          <button className="bb-btn bb-btn-secondary" style={{ width: '100%' }} onClick={begin}>Re-run the profiling</button>
-        </div>
-      )}
-
-      {mode === 'error' && (
-        <div>
-          <Row dot={t.error}><span style={{ color: t.error, fontWeight: 500 }}>Profiling failed.</span>{err ? <span style={{ color: t.g600 }}> {err}</span> : null}</Row>
-          <button className="bb-btn bb-btn-primary" style={{ width: '100%', marginTop: 12 }} onClick={begin}>Try again</button>
-        </div>
-      )}
+      {mode === 'done' && <DoneCard onRerun={begin} />}
+      {mode === 'error' && <ErrorCard err={err} onRetry={begin} />}
 
       {mode === 'needclaude' && (
         <Row dot={t.g300}>Open <b>claude.ai</b> in a tab, then click the icon again to profile.</Row>
@@ -198,31 +249,10 @@ function ClaudePanel() {
 }
 
 // ---------------------------------------------------------------------------
-// ChatGPT: capture-only, then hand off to the GPT page (no auto-start; capture on click).
+// ChatGPT: invisible autorun in a background tab (starts on click, can be stopped).
 
-type CgMode = 'idle' | 'capturing' | 'error';
-const CAPTURE_KEY = 'aibadges:chatgpt:capture';
+type CgMode = 'idle' | 'capturing' | 'done' | 'error';
 
-async function findChatGptTab(): Promise<number | null> { return firstTabId(['https://chatgpt.com/*', 'https://chat.openai.com/*']); }
-async function pingCaptureAlive(): Promise<boolean> {
-  const id = await findChatGptTab();
-  if (id == null) return false;
-  return new Promise((res) => chrome.tabs.sendMessage(id, { type: 'aibadges:cg-alive' }, (r) => res(!chrome.runtime.lastError && !!(r as { running?: boolean })?.running)));
-}
-async function startCapture(): Promise<boolean> {
-  const id = await findChatGptTab();
-  if (id == null) return false;
-  // Resolve the content script's actual reply: ok:true (started) OR ok:false+already running both
-  // mean "a run is now active and will emit cg-phase/cg-done" — only a transport failure is false.
-  const send = () => new Promise<boolean>((res) => chrome.tabs.sendMessage(id, { type: 'aibadges:cg-capture' }, (r) => {
-    if (chrome.runtime.lastError) { res(false); return; }
-    const resp = r as { ok?: boolean; error?: string } | undefined;
-    res(resp?.ok === true || resp?.error === 'already running');
-  }));
-  if (await send()) return true;
-  try { await chrome.scripting.executeScript({ target: { tabId: id }, files: ['content-scripts/chatgpt-capture.js'] }); } catch { return false; }
-  return await send();
-}
 function ChatGptPanel() {
   const [mode, setMode] = useState<CgMode>('idle');
   const [prog, setProg] = useState<{ done: number; total: number; phase?: string } | null>(null);
@@ -231,20 +261,23 @@ function ChatGptPanel() {
 
   useEffect(() => {
     (async () => {
-      const r = await chrome.storage.local.get(['aibadges:status', 'aibadges:cg:running', 'aibadges:progress']);
-      setHasProfile(r['aibadges:status'] === 'done');
+      const r = await chrome.storage.local.get(['aibadges:cg:running', 'aibadges:progress']);
+      const haveChatGpt = (await latestVersionOf('chatgpt')) > 0;
+      setHasProfile(haveChatGpt);
       // Reattach to an in-flight run from durable storage (the background persists cg:running +
       // progress), so reopening the popup mid-run shows the progress bar, not the start button.
       if (r['aibadges:cg:running']) {
         setMode('capturing');
         const p = r['aibadges:progress'] as { done?: number; total?: number; phase?: string } | null;
         if (p && typeof p.done === 'number') setProg({ done: p.done, total: p.total ?? 0, phase: p.phase });
+      } else if (haveChatGpt) {
+        setMode('done');
       }
     })();
     const onMsg = (m: any) => {
       if (m?.type === 'aibadges:cg-phase') setProg({ done: m.done, total: m.total, phase: m.phase });
       else if (m?.type === 'aibadges:cg-start') { setProg(null); setMode('capturing'); }
-      else if (m?.type === 'aibadges:cg-autorun-done') { setHasProfile(true); setMode('idle'); }
+      else if (m?.type === 'aibadges:cg-autorun-done') { setHasProfile(true); setMode('done'); }
       else if (m?.type === 'aibadges:cg-autorun-error' || m?.type === 'aibadges:cg-error') { setErr(String(m.error || '')); setMode('error'); }
     };
     chrome.runtime.onMessage.addListener(onMsg);
@@ -261,61 +294,52 @@ function ChatGptPanel() {
   function stop() {
     // Tell the worker to tear down (close the background tab, clear run state); reset the popup.
     chrome.runtime.sendMessage({ type: 'aibadges:cg-cancel' }, () => void chrome.runtime.lastError);
-    setProg(null); setErr(''); setMode('idle');
+    setProg(null); setErr('');
+    setMode(hasProfile ? 'done' : 'idle');
   }
 
   const p = prog && prog.total ? Math.round((prog.done / prog.total) * 100) : 4;
 
   return (
     <div>
-      {hasProfile && mode !== 'capturing' && (
-        <button className="bb-btn bb-btn-secondary bb-btn-sm" style={{ width: '100%', marginBottom: 12 }} onClick={openResults}>
-          Open your profile
-        </button>
-      )}
+      {hasProfile && mode === 'capturing' && <OpenCurrentProfile />}
 
       {mode === 'idle' && (
         <div>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Profile from ChatGPT</div>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Profile your ChatGPT history</div>
           <div style={{ fontSize: 13, color: t.g600, marginBottom: 14, lineHeight: 1.5 }}>
-            Runs in the background using your own ChatGPT session. Nothing is added to your chat history, and your chats are never sent to our servers.
+            Runs in the background using your own ChatGPT session. Nothing is added to your ChatGPT history, and your chats are never sent to our servers.
           </div>
-          <button className="bb-btn bb-btn-primary" style={{ width: '100%' }} onClick={capture}>Profile my ChatGPT</button>
+          <button className="bb-btn bb-btn-primary" style={{ width: '100%' }} onClick={capture}>Start profiling</button>
         </div>
       )}
 
       {mode === 'capturing' && (
         <div>
-          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>{prog?.phase === 'analysis' ? 'Analyzing in your ChatGPT…' : 'Reading your ChatGPT history…'}</div>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>{RUN_TITLE.chatgpt}</div>
           <div style={{ fontSize: 13, color: t.g600, marginBottom: 12 }}>
             {prog?.phase === 'analysis'
               ? (() => {
                   // total = extraction batches + synthesis + audit, done = COMPLETED steps; naming
-                  // the step makes a multi-minute GPT-5.5 turn read as progress, not a hang. The
+                  // the step makes a multi-minute GPT turn read as progress, not a hang. The
                   // extraction batches run in parallel tabs, so the label counts completions
                   // instead of pretending they happen one at a time.
                   const total = prog.total || 4;
                   const batches = Math.max(1, total - 2);
-                  if (prog.done < batches) return `Step ${prog.done + 1} of ${total}: extracting evidence in parallel (${prog.done}/${batches} batches done) — a few minutes`;
+                  if (prog.done < batches) return `Step ${prog.done + 1} of ${total}: extracting evidence from your conversations (${prog.done}/${batches} batches done)`;
                   if (prog.done === batches) return `Step ${prog.done + 1} of ${total}: scoring your four fluencies — the longest step`;
                   return `Step ${Math.min(prog.done + 1, total)} of ${total}: adversarial audit of the scores`;
                 })()
-              : (prog ? `${prog.done} / ${prog.total} conversations` : 'Starting…')}
+              : (prog ? `${PHASE_LABEL.capture} — ${prog.done} / ${prog.total}` : 'Starting…')}
           </div>
-          <div style={{ height: 8, background: t.g100, borderRadius: 50, overflow: 'hidden' }}>
-            <div className="bb-bar-fill" style={{ height: '100%', width: `${Math.max(3, Math.min(100, p))}%`, background: t.purple, borderRadius: 50, transition: 'width .4s ease' }} />
-          </div>
-          <div style={{ fontSize: 12, color: t.g500, marginTop: 8 }}>Runs in a background tab and opens your profile here automatically. You can switch tabs; nothing is added to your ChatGPT history.</div>
+          <ProgressBar value={p} />
+          <div style={{ fontSize: 12, color: t.g500, marginTop: 8 }}>Runs in a background tab — you can switch tabs or close this popup; the run keeps going. Nothing is added to your ChatGPT history, and your chats are never sent to our servers.</div>
           <button className="bb-btn bb-btn-secondary bb-btn-sm" style={{ width: '100%', marginTop: 12 }} onClick={stop}>Stop</button>
         </div>
       )}
 
-      {mode === 'error' && (
-        <div>
-          <Row dot={t.error}><span style={{ color: t.error, fontWeight: 500 }}>Capture failed.</span>{err ? <span style={{ color: t.g600 }}> {err}</span> : null}</Row>
-          <button className="bb-btn bb-btn-primary" style={{ width: '100%', marginTop: 12 }} onClick={capture}>Try again</button>
-        </div>
-      )}
+      {mode === 'done' && <DoneCard onRerun={capture} />}
+      {mode === 'error' && <ErrorCard err={err} onRetry={capture} />}
     </div>
   );
 }
