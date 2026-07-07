@@ -35,6 +35,12 @@ export interface BuildProfileOpts {
    * to cited units only, so it cannot serve as the pool.)
    */
   onEvidencePool?: (units: EvidenceUnit[]) => void;
+  /**
+   * The window the profile measures. With incremental extraction, `convos` holds only the
+   * conversations that needed (re)scanning — the measured window is the caller's full selection,
+   * so it must be passed explicitly or an unchanged re-run would report a 0-conversation window.
+   */
+  sourceWindow?: Profile['sourceWindow'];
 }
 
 // A run must never overwrite a good profile with a contentless one, and must fail LOUDLY when
@@ -90,7 +96,8 @@ export async function buildProfile(convos: RawConversation[], caller: ModelCalle
     { thinking, trajectory, type: cogType ?? undefined, capability: capability ?? undefined, evidence },
     {
       version: opts.version, now: opts.now, modelProvenance: opts.modelProvenance,
-      sourceWindow: { fromDate: dates[0] ?? opts.now, toDate: dates[dates.length - 1] ?? opts.now, conversationCount: convos.length },
+      sourceWindow: opts.sourceWindow
+        ?? { fromDate: dates[0] ?? opts.now, toDate: dates[dates.length - 1] ?? opts.now, conversationCount: convos.length },
     },
   );
 }

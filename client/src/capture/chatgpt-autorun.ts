@@ -4,7 +4,8 @@ import { buildChatGptExport } from './chatgpt-export';
 import { buildExtractionPrompt, buildExtractionSecondSweep, buildSynthesisFromEvidence, buildAuditPrompt } from './chatgpt-prompt';
 import { setComposer, clickSend, hasChallenge } from './chatgpt-bridge';
 import { importGptReply, CAPTURE_KEY } from '../run/import-chatgpt';
-import { dedupeMoments, sameMoment, loadPool, savePool, mergePool, type PoolUnit } from '../engine/evidence-pool';
+import { dedupeMoments, sameMoment, loadPool, savePool, mergePool, evictedConversations, type PoolUnit } from '../engine/evidence-pool';
+import { loadScanSet, saveScanSet, partitionScanned, nextScanSet } from '../store/scanset';
 import { chromeKv } from '../store/chrome-kv';
 import { CG_BATCH_OUT_PREFIX, CG_BATCH_CONVO_PREFIX, batchOutKey, batchConvoKey } from './cg-keys';
 import type { RawConversation } from './types';
@@ -552,22 +553,33 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   }
 
   // 1. Capture history (read-only, user-centric) across the whole timeline — unless resuming.
+  //    Incremental: fetch only conversations that are new or changed since their last scan; the
+  //    rest are already represented in the evidence pool. An empty pool forces a full scan.
   if (!bundle) {
     const adapter = new ChatGPTCaptureAdapter();
     const list = await adapter.listConversations();
     if (list.length === 0) throw new Error('No ChatGPT conversations found (are you logged in to chatgpt.com?).');
     const picked = selectAcrossTimeline(list, TOTAL_CONVOS);
+    const scanned = await loadScanSet(chromeKv, 'chatgpt');
+    const pool = await loadPool(chromeKv, 'chatgpt');
+    const { toScan } = pool.length ? partitionScanned(picked, scanned) : { toScan: picked };
     const convos: RawConversation[] = [];
-    notify({ type: 'aibadges:cg-phase', phase: 'capture', done: 0, total: picked.length });
-    for (let i = 0; i < picked.length; i++) {
-      try { convos.push(await adapter.fetchConversation(picked[i].id)); } catch { /* skip one unreadable convo */ }
-      notify({ type: 'aibadges:cg-phase', phase: 'capture', done: i + 1, total: picked.length });
+    notify({ type: 'aibadges:cg-phase', phase: 'capture', done: 0, total: toScan.length });
+    for (let i = 0; i < toScan.length; i++) {
+      try { convos.push(await adapter.fetchConversation(toScan[i].id)); } catch { /* skip one unreadable convo */ }
+      notify({ type: 'aibadges:cg-phase', phase: 'capture', done: i + 1, total: toScan.length });
     }
     bundle = buildChatGptExport(convos, new Date().toISOString(), { perConvoChars: PER_CONVO_CHARS, assistantHeadChars: ASSISTANT_HEAD_CHARS });
+    // The measured window is the FULL selection (the export holds only the re-scanned subset).
+    const windowDates = picked.map((c) => c.updatedAt).sort();
+    bundle.window = {
+      fromDate: windowDates[0] ?? bundle.capturedAt, toDate: windowDates[windowDates.length - 1] ?? bundle.capturedAt,
+      conversationCount: picked.length,
+    };
+    bundle.scan = { entries: toScan.map(({ id, updatedAt }) => ({ id, updatedAt })), validIds: list.map((c) => c.id) };
     await chrome.storage.local.set({ [CAPTURE_KEY]: JSON.stringify(bundle) });
   }
   const allConvos = bundle.export.conversations;
-  if (allConvos.length === 0) throw new Error('Captured no readable conversation text.');
 
   // 2. Map-reduce analysis. MAP: extract evidence per batch, each batch a model turn in ITS OWN
   //    throwaway conversation inside a parallel background worker tab (runBatchesInTabs), pooled
@@ -621,13 +633,14 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
       });
     }
     const pooled = assemblePool(unitsByBatch, doneBatches);
-    if (pooled.length === 0) {
+    // Fresh units + the persistent pool = what synthesis actually judges. Prior evidence keeps a
+    // band from dropping just because this run failed to re-find one borderline quote — and on an
+    // unchanged incremental re-run (nothing to re-scan) it IS the whole evidence set.
+    const allPooled = appendPriorPool(pooled, priorPool, bundle.idMap);
+    if (allPooled.length === 0) {
       await clearCkpt();
       throw new Error('ChatGPT returned no usable evidence from your history.');
     }
-    // Fresh units + the persistent pool = what synthesis actually judges. Prior evidence keeps a
-    // band from dropping just because this run failed to re-find one borderline quote.
-    const allPooled = appendPriorPool(pooled, priorPool, bundle.idMap);
 
     let synthText = plan.synthText;
     if (!synthText) {
@@ -657,9 +670,18 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
     if (main.id) await deleteConversation(main.id, token);
     await clearCkpt();
     const profile = await importGptReply(combineForImport(allPooled, synthText, auditText));
-    // Persist the pool only for a KEPT profile — a discarded run must not grow it. Fresh units are
-    // re-keyed to real conversation ids so future runs (whose c1/c2 aliases differ) can dedupe.
-    await savePool(chromeKv, 'chatgpt', mergePool(priorPool, poolFromRun(pooled, bundle)));
+    // Persist the pool + scan set only for a KEPT profile — a discarded run must not grow them.
+    // Fresh units are re-keyed to real conversation ids so future runs (whose c1/c2 aliases
+    // differ) can dedupe; the scan set drops deleted conversations and any evicted from the
+    // pool's cap (those must be re-scanned next run).
+    const freshUnits = poolFromRun(pooled, bundle);
+    const merged = mergePool(priorPool, freshUnits);
+    await savePool(chromeKv, 'chatgpt', merged);
+    if (bundle.scan) {
+      const evicted = evictedConversations([...priorPool, ...freshUnits], merged);
+      const prevScanned = await loadScanSet(chromeKv, 'chatgpt');
+      await saveScanSet(chromeKv, 'chatgpt', nextScanSet(prevScanned, bundle.scan.entries, new Set(bundle.scan.validIds), evicted));
+    }
     notify({ type: 'aibadges:done', version: profile.version });
     notify({ type: 'aibadges:cg-autorun-done', version: profile.version, skippedBatches: skippedBatches.length });
   } catch (e) {

@@ -60,6 +60,16 @@ export function mergePool(prior: PoolUnit[], fresh: PoolUnit[], cap = POOL_CAP):
   return merged.length > cap ? merged.slice(merged.length - cap) : merged;
 }
 
+/**
+ * Conversations that lost ALL their units to the merge's cap eviction. Their scan-set entries
+ * must be dropped so the next run re-scans them — a "scanned" conversation with no pooled
+ * evidence would otherwise become a permanent blind spot.
+ */
+export function evictedConversations(before: PoolUnit[], after: PoolUnit[]): Set<string> {
+  const kept = new Set(after.map((u) => u.sourceRef.conversationId));
+  return new Set(before.map((u) => u.sourceRef.conversationId).filter((id) => !kept.has(id)));
+}
+
 const isPoolUnit = (u: unknown): u is PoolUnit => {
   const o = u as PoolUnit | null;
   return !!o && typeof o === 'object' && typeof o.quote === 'string' && !!o.quote

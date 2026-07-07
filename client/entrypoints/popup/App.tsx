@@ -331,8 +331,10 @@ function ChatGptPanel() {
                   // the step makes a multi-minute GPT turn read as progress, not a hang. The
                   // extraction batches run in parallel tabs, so the label counts completions
                   // instead of pretending they happen one at a time.
+                  // batches can be 0 on an incremental re-run with nothing new — it goes straight
+                  // to synthesis, so the extraction label must never show.
                   const total = prog.total || 4;
-                  const batches = Math.max(1, total - 2);
+                  const batches = Math.max(0, total - 2);
                   if (prog.done < batches) return `Step ${prog.done + 1} of ${total}: extracting evidence from your conversations (${prog.done}/${batches} batches done)`;
                   if (prog.done === batches) return `Step ${prog.done + 1} of ${total}: scoring your four fluencies — the longest step`;
                   return `Step ${Math.min(prog.done + 1, total)} of ${total}: adversarial audit of the scores`;

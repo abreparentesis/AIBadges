@@ -122,6 +122,30 @@ describe('profileFromGptOutput', () => {
     expect(() => profileFromGptOutput(JSON.stringify(out), bundle, { ...opts, fluencyOnly: true })).toThrow(GptImportError);
   });
 
+  // Incremental extraction: the export holds only the re-scanned subset; the measured window is
+  // the bundle's explicit `window` (the full selection), and pool-injected evidence keeps its own
+  // timestamp instead of collapsing to the window end.
+  it('prefers the bundle window and explicit evidence timestamps when present', () => {
+    const withWindow = {
+      ...bundle,
+      window: { fromDate: '2025-11-01T00:00:00Z', toDate: '2026-06-01T00:00:00Z', conversationCount: 90 },
+    };
+    const out = {
+      ...goodOutput,
+      // e9 must be cited — assembleProfile prunes evidence to referenced units.
+      thinking: [...goodOutput.thinking, { claim: 'Keeps verified moments across runs', evidenceIds: ['e9'], confidence: 'low' }],
+      evidence: [
+        ...goodOutput.evidence,
+        { id: 'e9', quote: 'a pooled quote from a past run', summary: 's', type: 'decision', conversationId: 'real-uuid-old', timestamp: '2026-02-02T00:00:00Z' },
+      ],
+    };
+    const p = profileFromGptOutput(JSON.stringify(out), withWindow, opts);
+    expect(p.sourceWindow).toEqual({ fromDate: '2025-11-01T00:00:00Z', toDate: '2026-06-01T00:00:00Z', conversationCount: 90 });
+    const e9 = p.evidence!.find((e) => e.id === 'e9')!;
+    expect(e9.timestamp).toBe('2026-02-02T00:00:00Z');
+    expect(e9.sourceRef.conversationId).toBe('real-uuid-old');
+  });
+
   it('normalizes case-variant evidence type and confidence from the GPT', () => {
     const out = {
       thinking: [{ claim: 'c', evidenceIds: ['e1'], confidence: 'HIGH' }],

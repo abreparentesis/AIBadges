@@ -63,8 +63,11 @@ export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: I
   const exp = bundle.export;
   const createdAtById = new Map(exp.conversations.map((c) => [c.conversationId, c.createdAt]));
   const dates = exp.conversations.map((c) => c.createdAt).filter(Boolean).sort();
-  const fromDate = dates[0] ?? opts.now;
-  const toDate = dates[dates.length - 1] ?? opts.now;
+  // Prefer the bundle's explicit window: with incremental extraction the export holds only the
+  // re-scanned subset, while the measured window is the run's full selection.
+  const fromDate = bundle.window?.fromDate ?? dates[0] ?? opts.now;
+  const toDate = bundle.window?.toDate ?? dates[dates.length - 1] ?? opts.now;
+  const conversationCount = bundle.window?.conversationCount ?? exp.conversations.length;
 
   // ---- evidence (always top-level `evidence`) ----
   const seenIds = new Set<string>();
@@ -179,7 +182,7 @@ export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: I
     {
       version: opts.version, now: opts.now,
       modelProvenance: 'chatgpt-custom-gpt (self-run in your ChatGPT)',
-      sourceWindow: { fromDate, toDate, conversationCount: exp.conversations.length },
+      sourceWindow: { fromDate, toDate, conversationCount },
     },
   );
 

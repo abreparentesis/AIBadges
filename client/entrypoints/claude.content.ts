@@ -2,7 +2,8 @@ import type { RawConversation } from '../src/capture/types';
 import { ClaudeCaptureAdapter } from '../src/capture/claude';
 import { InSessionClaudeCaller, isRateLimitError } from '../src/inference/in-session';
 import { buildProfile, isEmptyProfile } from '../src/engine/profile';
-import { loadPool, savePool, mergePool, type PoolUnit } from '../src/engine/evidence-pool';
+import { loadPool, savePool, mergePool, evictedConversations, type PoolUnit } from '../src/engine/evidence-pool';
+import { loadScanSet, saveScanSet, partitionScanned, nextScanSet } from '../src/store/scanset';
 import { distill } from '../src/engine/distill';
 import { ProfileStore } from '../src/store/local';
 import { chromeKv } from '../src/store/chrome-kv';
@@ -45,27 +46,35 @@ export default defineContentScript({
         // trajectory lens sees real span. The char budget below is sized to cover all of these.
         // 90 matches the ChatGPT path's window (cross-provider comparability); the tighter
         // per-conversation budget below keeps the total inside the same 6-chunk cap.
-        const conversations = selectAcrossTimeline(await adapter.listConversations(), 90);
+        const fullList = await adapter.listConversations();
+        const conversations = selectAcrossTimeline(fullList, 90);
 
         // Choose models from what this account actually has: a fast model for bulk evidence
         // extraction, the best for synthesis. Never assume a tier.
         const { fast, best } = pickModels(conversations.map((c) => c.model));
         const caller = new InSessionClaudeCaller(org, best ?? conversations[0]?.model ?? null);
 
+        // Incremental extraction: fetch + extract only conversations that are new or changed since
+        // their last scan; everything else is already represented in the evidence pool. An empty
+        // pool forces a full scan (a scan set without its pool would mask the whole history).
+        const priorPool = await loadPool(chromeKv, 'claude');
+        const scanned = await loadScanSet(chromeKv, 'claude');
+        const { toScan } = priorPool.length ? partitionScanned(conversations, scanned) : { toScan: conversations };
+
         const convos: RawConversation[] = [];
-        notify({ type: 'aibadges:phase', phase: 'capture', done: 0, total: conversations.length });
-        for (let i = 0; i < conversations.length; i++) {
-          convos.push(await adapter.fetchConversation(conversations[i].id));
-          notify({ type: 'aibadges:phase', phase: 'capture', done: i + 1, total: conversations.length });
+        notify({ type: 'aibadges:phase', phase: 'capture', done: 0, total: toScan.length });
+        for (let i = 0; i < toScan.length; i++) {
+          convos.push(await adapter.fetchConversation(toScan[i].id));
+          notify({ type: 'aibadges:phase', phase: 'capture', done: i + 1, total: toScan.length });
         }
         const capturedChars = convos.reduce((n, c) => n + c.messages.reduce((s, m) => s + m.text.length, 0), 0);
-        if (capturedChars === 0) console.warn('[aibadges] captured 0 chars of message text');
+        if (toScan.length > 0 && capturedChars === 0) console.warn('[aibadges] captured 0 chars of message text');
 
         const version = (await store.latestVersion()) + 1;
         const now = new Date().toISOString();
-        // Evidence pool from previous runs: verified quotes accumulate across runs so a band can't
-        // drop just because a re-run failed to re-find one borderline quote. Local-only, never synced.
-        const priorPool = await loadPool(chromeKv, 'claude');
+        // The measured window is the full selection, not just what needed re-scanning — an
+        // unchanged re-run still measures the same 90 conversations (via the pool).
+        const windowDates = conversations.map((c) => c.updatedAt).sort();
         let runPool: PoolUnit[] = [];
         try {
           const profile = await buildProfile(convos, caller, {
@@ -79,6 +88,10 @@ export default defineContentScript({
             maxChars: 48000, maxChunks: 6, perConvoChars: 2500, concurrency: 3,
             priorEvidence: priorPool,
             onEvidencePool: (units) => { runPool = units.map(({ id: _id, ...u }) => u); },
+            sourceWindow: {
+              fromDate: windowDates[0] ?? now, toDate: windowDates[windowDates.length - 1] ?? now,
+              conversationCount: conversations.length,
+            },
             onPhase: (p) => notify({ type: 'aibadges:phase', ...p }),
             onSynthesisDebug: (d) => { void chromeKv.set('aibadges:debug:synthesis', JSON.stringify(d)); },
           });
@@ -89,8 +102,15 @@ export default defineContentScript({
             throw new Error('The analysis produced no fluency result this run (usually a transient Claude error — try again in a minute). Your existing profile, if any, was kept.');
           }
           await store.saveProfileVersion(profile);
-          // Persist the pool only for a KEPT profile — a discarded run must not grow the pool.
-          if (runPool.length) await savePool(chromeKv, 'claude', mergePool(priorPool, runPool));
+          // Persist the pool + scan set only for a KEPT profile — a discarded run must not grow
+          // them. The scan set drops deleted conversations and any evicted from the pool's cap
+          // (those must be re-scanned), then records this run's scans at their fingerprints.
+          if (runPool.length) {
+            const merged = mergePool(priorPool, runPool);
+            await savePool(chromeKv, 'claude', merged);
+            const evicted = evictedConversations([...priorPool, ...runPool], merged);
+            await saveScanSet(chromeKv, 'claude', nextScanSet(scanned, toScan, new Set(fullList.map((c) => c.id)), evicted));
+          }
           await chromeKv.set('aibadges:signals:claude', JSON.stringify(distill(profile, now, undefined, 'Claude')));
           let synced: number | string;
           try {

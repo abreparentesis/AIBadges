@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dedupeMoments, mergePool, sameMoment, loadPool, savePool, poolKey, POOL_CAP, type PoolUnit } from '../../src/engine/evidence-pool';
+import { dedupeMoments, mergePool, sameMoment, loadPool, savePool, poolKey, POOL_CAP, evictedConversations, type PoolUnit } from '../../src/engine/evidence-pool';
 import type { KV } from '../../src/store/types';
 
 function memKv(seed: Record<string, string> = {}): KV & { store: Record<string, string> } {
@@ -56,6 +56,16 @@ describe('mergePool', () => {
     const merged = mergePool([], many);
     expect(merged).toHaveLength(POOL_CAP);
     expect(merged[0].quote).toBe('moment number 10 with enough words'); // 0..9 evicted
+  });
+});
+
+describe('evictedConversations', () => {
+  it('reports conversations that lost ALL units to eviction, not ones that kept some', () => {
+    const a1 = unit({ quote: 'first moment in convo A', sourceRef: { provider: 'claude', conversationId: 'A' } });
+    const a2 = unit({ quote: 'second moment in convo A', sourceRef: { provider: 'claude', conversationId: 'A' } });
+    const b = unit({ quote: 'only moment in convo B', sourceRef: { provider: 'claude', conversationId: 'B' } });
+    expect(evictedConversations([a1, a2, b], [a2])).toEqual(new Set(['B']));
+    expect(evictedConversations([a1, b], [a1, b])).toEqual(new Set());
   });
 });
 

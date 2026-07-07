@@ -20,6 +20,13 @@ export interface CaptureBundle {
   export: ChatGptExport;
   idMap: Record<string, string>; // synthetic id (c1) -> real ChatGPT conversation id
   capturedAt: string;
+  /**
+   * The measured window (the run's FULL selection). With incremental extraction the export holds
+   * only the conversations that needed re-scanning, so the window can't be derived from it.
+   */
+  window?: { fromDate: string; toDate: string; conversationCount: number };
+  /** Incremental-extraction bookkeeping carried to the end of the run (transient, like the bundle). */
+  scan?: { entries: Array<{ id: string; updatedAt: string }>; validIds: string[] };
 }
 
 export interface ExportOpts {
