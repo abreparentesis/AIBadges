@@ -9,6 +9,7 @@ import { ProfileStore } from '../src/store/local';
 import { chromeKv } from '../src/store/chrome-kv';
 import { ensureUserKey } from '../src/store/userkey';
 import { BackendSync, needsRepushKey } from '../src/sync/backend';
+import { carryOverSharing } from '../src/sync/signal-state';
 import { BACKEND_URL, INVITE_TOKEN } from '../src/config';
 import { pickModels } from '../src/engine/models';
 import { selectAcrossTimeline } from '../src/capture/select';
@@ -124,12 +125,27 @@ export default defineContentScript({
             const evicted = evictedConversations([...priorPool, ...runPool], merged);
             await saveScanSet(chromeKv, 'claude', nextScanSet(scanned, toScan, new Set(fullList.map((c) => c.id)), evicted));
           }
-          await chromeKv.set('aibadges:signals:claude', JSON.stringify(distill(profile, now, undefined, 'Claude')));
+          // Publishing is USER state, not run output: a re-run must not flip a published badge
+          // back to private (that bug made the share section "forget" the URL after every run).
+          const signals = carryOverSharing(await chromeKv.get('aibadges:signals:claude'), distill(profile, now, undefined, 'Claude'));
+          await chromeKv.set('aibadges:signals:claude', JSON.stringify(signals));
           let synced: number | string;
           try {
             const userKey = await ensureUserKey(chromeKv, 'claude');
-            synced = (await new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey }).pushProfile(profile)).version;
+            const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
+            synced = (await sync.pushProfile(profile)).version;
             await chromeKv.set(needsRepushKey('claude'), '0'); // fresh push satisfies the post-delete repush guarantee
+            // Keep the public share page in sync with the newest run (the server keeps the token,
+            // so the URL never changes — only its content).
+            const pub = signals.filter((s) => s.disclosure === 'public');
+            if (pub.length) {
+              await sync.setSignals(pub.map((s) => ({ type: s.type, surfacedContent: s.surfacedContent, disclosure: 'public' as const })));
+              const stat = pub.find((s) => s.type === 'statBadge');
+              if (stat) {
+                const c = stat.surfacedContent as { fluencyScore?: number; yeggeStage?: number | string };
+                await chromeKv.set('aibadges:publishedStage:claude', String(c.fluencyScore ?? c.yeggeStage ?? ''));
+              }
+            }
           } catch (e) { console.warn('[aibadges] sync failed (non-fatal)', e); synced = `error: ${String(e)}`; }
           console.log('[aibadges] done', { version, capturedChars, fast, best, thinking: profile.thinking.length, type: profile.type?.code ?? null, shifts: profile.trajectory.shifts.length, synced });
           return version;

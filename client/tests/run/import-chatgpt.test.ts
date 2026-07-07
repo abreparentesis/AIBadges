@@ -92,4 +92,32 @@ describe('importGptReply', () => {
   it('throws when there is no capture to import against', async () => {
     await expect(importGptReply(reply, { kv: memKv(), now: '2026-06-08T00:00:00Z' })).rejects.toThrow(/No captured/);
   });
+
+  // REGRESSION: a re-run must not flip a published badge back to private — and it must refresh
+  // the server's public copy so the share page shows the newest score at the same URL.
+  it('keeps a published badge public across a re-run and republishes the fresh content', async () => {
+    const prevSignals = JSON.stringify([{
+      id: 'sig-stat-0', type: 'statBadge', fromProfileVersion: 0,
+      surfacedContent: { fluencyScore: 40 }, disclosure: 'public', shareToken: 'tok-keep',
+      provenanceLabel: 'p', createdAt: '2026-06-01T00:00:00Z',
+    }]);
+    const kv = memKv({ [CAPTURE_KEY]: JSON.stringify(bundle), 'aibadges:signals:chatgpt': prevSignals });
+    const reqs: Array<{ url: string; body: string }> = [];
+    await importGptReply(reply, {
+      kv, now: '2026-06-08T00:00:00Z', backendUrl: 'https://api.test', inviteToken: 'INV',
+      fetchFn: async (url, init) => {
+        reqs.push({ url: String(url), body: String(init?.body ?? '') });
+        return new Response(JSON.stringify({ version: 1, signals: [{ type: 'statBadge', disclosure: 'public', shareToken: 'tok-keep' }] }), { status: 200 });
+      },
+    });
+    const stored = JSON.parse(kv.store['aibadges:signals:chatgpt']) as Array<{ disclosure: string; shareToken?: string }>;
+    expect(stored[0].disclosure).toBe('public');
+    expect(stored[0].shareToken).toBe('tok-keep');
+    const signalsReq = reqs.find((r) => r.url.endsWith('/v1/signals'));
+    expect(signalsReq).toBeDefined();
+    expect(signalsReq!.body).toContain('"disclosure":"public"');
+    expect(kv.store['aibadges:publishedStage:chatgpt']).toBeTruthy();
+    // privacy invariant holds for the republish too: no verbatim quotes in any request
+    expect(reqs.every((r) => !r.body.includes('SECRET-CHATGPT'))).toBe(true);
+  });
 });

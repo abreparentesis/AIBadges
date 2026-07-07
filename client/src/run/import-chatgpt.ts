@@ -1,5 +1,6 @@
 import { profileFromGptOutput } from '../engine/chatgpt-import';
 import { distill } from '../engine/distill';
+import { carryOverSharing } from '../sync/signal-state';
 import { ProfileStore } from '../store/local';
 import { chromeKv } from '../store/chrome-kv';
 import { ensureUserKey } from '../store/userkey';
@@ -45,16 +46,31 @@ export async function importGptReply(replyText: string, deps: ImportDeps = {}): 
   const profile = profileFromGptOutput(replyText, bundle, { version, now });
 
   await store.saveProfileVersion(profile);
-  await kv.set('aibadges:signals:chatgpt', JSON.stringify(distill(profile, now, undefined, 'ChatGPT')));
+  // Publishing is USER state, not run output: a re-run must not flip a published badge back to
+  // private (that bug made the share section "forget" the URL after every run).
+  const signals = carryOverSharing(await kv.get('aibadges:signals:chatgpt'), distill(profile, now, undefined, 'ChatGPT'));
+  await kv.set('aibadges:signals:chatgpt', JSON.stringify(signals));
   try {
     const userKey = await ensureUserKey(kv, 'chatgpt');
-    await new BackendSync({
+    const sync = new BackendSync({
       backendUrl: deps.backendUrl ?? BACKEND_URL,
       inviteToken: deps.inviteToken ?? INVITE_TOKEN,
       userKey,
       fetchFn: deps.fetchFn,
-    }).pushProfile(profile);
+    });
+    await sync.pushProfile(profile);
     await kv.set(needsRepushKey('chatgpt'), '0'); // fresh push satisfies the post-delete repush guarantee
+    // Keep the public share page in sync with the newest run (the server keeps the token, so the
+    // URL never changes — only its content).
+    const pub = signals.filter((s) => s.disclosure === 'public');
+    if (pub.length) {
+      await sync.setSignals(pub.map((s) => ({ type: s.type, surfacedContent: s.surfacedContent, disclosure: 'public' as const })));
+      const stat = pub.find((s) => s.type === 'statBadge');
+      if (stat) {
+        const c = stat.surfacedContent as { fluencyScore?: number; yeggeStage?: number | string };
+        await kv.set('aibadges:publishedStage:chatgpt', String(c.fluencyScore ?? c.yeggeStage ?? ''));
+      }
+    }
   } catch (e) { console.warn('[aibadges] sync failed (non-fatal):', (e as Error)?.message ?? 'unknown'); }
 
   await kv.set(runKey('status', 'chatgpt'), 'done');
