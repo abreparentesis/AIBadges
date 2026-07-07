@@ -70,3 +70,29 @@ Reading, for badge thresholds on the GPT-5.5 path:
   threshold logic should not hang product decisions on a single band edge.
 - One run in 21 produced an empty capability section (model step failed all retries; the
   engine dropped the section rather than fabricate). Rerunning fixed it.
+
+## Results: PRISM known-groups validation (2026-07-07) — null, with a reason
+
+Design: 10 self-reported high-LLM-familiarity PRISM users vs 9 low, each scored blind
+through the full pipeline (`prism-prep.ts` → `eval-api.ts` → `prism-aggregate.py`).
+Outcome: **no separation** (composite 5.60 vs 5.44 on a 4-16 scale; permutation p = 0.84).
+
+Why, and what it actually tells us:
+- **Floor effect, by design of the input.** PRISM histories are six short, task-prompted
+  conversations (~3 turns each); users produced only 4-8 evidence units. 18 of 19 users
+  landed at stage 2 with composites in the bottom quarter of the scale. There is almost no
+  behavioral surface for delegation, description, or diligence to show in that sample.
+- **The engine floored instead of fabricating.** With thin evidence, bands collapsed to
+  emerging/developing uniformly rather than spreading randomly or inflating — the
+  substance gate and evidence caps behaving exactly as designed. A noisy or sycophantic
+  rater would have produced spurious separation; ours refused. That is a pass of the
+  honesty property, and a fail of PRISM as an anchor.
+- Conclusion: **PRISM cannot anchor this engine** — its histories are an order of
+  magnitude thinner than the ≥15 substantive conversations the engine needs (WildChat
+  users, 15-39 conversations, spread across four bands and stages 2-5 on the same
+  pipeline the same day). Self-reported familiarity also remains a weak proxy.
+- Product implication worth keeping: below roughly 10 substantive conversations the
+  ratings are floor-dominated; the extension should present low-history profiles as
+  provisional (it already grades confidence by evidence, which this validates).
+- Better future anchors: behavioral splits within WildChat (e.g. technical-workflow users
+  vs casual), or opt-in self-assessment from real product users once live.
