@@ -106,6 +106,31 @@ describe('assembleProfile', () => {
     expect(p.evidence!.map((e) => e.id)).toEqual(['e1']);
   });
 
+  it('derives the Yegge stage from the capped bands and ignores the model-provided stage entirely', () => {
+    // Decision record (WildChat calibration pilot, 2026-07-07): the model/audit step may emit
+    // its own yeggeStage, but the assembler's derivation wins by design — the derived stage is
+    // anchored to the audited, evidence-capped bands, while a model-emitted stage is an
+    // unanchored scalar. Bands (developing x3 + emerging) -> avg 1.75 -> round(1.75/4*6) = 3,
+    // regardless of whether the model claimed stage 1 or stage 8.
+    const mkCap = (stage: number) => ({
+      aiFluency: {
+        delegation: { band: 'developing' as const, evidenceIds: ['e1'] },
+        description: { band: 'developing' as const, evidenceIds: ['e1'] },
+        discernment: { band: 'developing' as const, evidenceIds: ['e1'] },
+        diligence: { band: 'emerging' as const, evidenceIds: ['e1'] },
+      },
+      yeggeStage: { stage, evidenceIds: ['e1'] },
+      domains: [],
+    });
+    const run = (stage: number) =>
+      assembleProfile(
+        { evidence: [ev('e1', 'c1')], thinking: [], trajectory: emptyTraj, capability: mkCap(stage) },
+        opts,
+      ).capability!.yeggeStage.stage;
+    expect(run(1)).toBe(3);
+    expect(run(8)).toBe(3);
+  });
+
   it('keeps a high band when the evidence weight supports it', () => {
     const capability = {
       aiFluency: {

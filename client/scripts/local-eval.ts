@@ -86,7 +86,7 @@ function printProfile(units: EvidenceUnit[], cap: Capability): void {
   );
   const by = new Map((p.evidence ?? []).map((e) => [e.id, e]));
   const convos = new Set((p.evidence ?? []).map((e) => e.sourceRef.conversationId)).size;
-  console.log(`\n=== ${p.evidence?.length ?? 0} evidence units / ${convos} conversations · stage ${p.capability!.yeggeStage.stage}/8 ===`);
+  console.log(`\n=== ${p.evidence?.length ?? 0} evidence units / ${convos} conversations · stage ${p.capability!.yeggeStage.stage}/8 (derived from the audited bands; a model-emitted stage is ignored by design) ===`);
   for (const k of ['delegation', 'description', 'discernment', 'diligence'] as const) {
     const d = p.capability!.aiFluency[k];
     console.log(`\n${k.toUpperCase()} — ${d.band.toUpperCase()}`);
