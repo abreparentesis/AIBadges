@@ -117,3 +117,33 @@ definition of fluency: how much value this person extracts from the same AI on t
 kind of task. Mind the PRISM lesson: ChatBench conversations are short task QA, so expect
 compressed bands; the correlation, not absolute levels, is the test. StudyChat is the
 follow-up if the ChatBench signal is positive (longitudinal realism, grade anchors).
+
+## Results: ChatBench pilot, 10 workers (2026-07-07) — null, inconclusive
+
+Ten workers stratified across the delta range (-0.23 to +0.51), scored blind
+(`chatbench-prep.ts` → `eval-api.ts` → `chatbench-aggregate.py`). Engine composite showed
+no correlation with any anchor: vs delta rho = -0.06 (p = 0.87), vs assisted accuracy
+rho = -0.22 (p = 0.54), vs alone accuracy rho = -0.17 (p = 0.63).
+
+Three explanations, none excludable at n=10:
+1. **Range restriction again, milder**: composites spanned 4-8 of 16 (short QA
+   conversations carry more signal than PRISM's chats but far less than WildChat).
+2. **The delta anchor is itself confounded by ceiling effects**: high alone-accuracy
+   workers mechanically cannot gain (one 87.5%-alone worker has ≤12.5% headroom and shows
+   delta -0.21 despite fluent-looking prompts, and the engine scored them high). Delta
+   punishes exactly the people whose chat style looks most capable.
+3. **Construct mismatch**: the engine rates conversational fluency (delegation,
+   description, discernment, diligence); ChatBench's anchor measures outcome on
+   multiple-choice QA. These may be genuinely different things — the ChatBench paper
+   itself finds user behavior only partially predicts benefit.
+
+Statistical reality: n=10 detects only |rho| ≥ ~0.75; the eligible pool (≥8 conversations
+AND ≥8 alone answers) is just 19 workers total, so even the full dataset caps out at
+detecting rho ≥ ~0.55. ChatBench cannot deliver strong validation either way.
+
+Standing conclusion after WildChat + PRISM + ChatBench: no existing public dataset can
+anchor this engine's construct. The distribution/discrimination/honesty evidence (WildChat)
+stands; construct validity against outcomes needs either StudyChat (last untested
+candidate: thicker longitudinal histories, grade anchors, n=203) or, better, real product
+users with opt-in outcome measures. Treat outcome-anchored validation as an open research
+question, not a blocker.
