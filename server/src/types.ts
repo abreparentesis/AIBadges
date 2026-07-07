@@ -43,6 +43,13 @@ export const ProfileSchema = z.object({
   computedAt: z.string(),
   modelProvenance: z.string(),
   sourceWindow: z.object({ fromDate: z.string(), toDate: z.string(), conversationCount: z.number().int() }),
+  // Thin-history flag computed client-side (client engine assembleProfile). Optional:
+  // older clients don't send it, and pushes without it must keep working.
+  coverage: z.object({
+    provisional: z.boolean(),
+    conversationCount: z.number().int(),
+    evidenceConversations: z.number().int(),
+  }).optional(),
   thinking: z.array(ClaimSchema),
   capability: CapabilitySchema.optional(), // optional after the personality pivot (client no longer sends it)
   trajectory: TrajectorySchema,

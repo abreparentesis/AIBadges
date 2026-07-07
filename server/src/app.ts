@@ -59,6 +59,7 @@ function renderReportPage(
   signals: Array<{ type: string; surfacedContent: Record<string, unknown> }>,
   provenance: string,
   ogImageUrl?: string,
+  coverage?: { provisional: boolean; conversationCount: number },
 ): string {
   const byType = (t: string) => signals.find((s) => s.type === t)?.surfacedContent;
   const typeC = byType('typeCard');
@@ -225,7 +226,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--g200);font-si
 </style></head>
 <body>
 <div class="topbar"><span class="mark">AI Fluency Index</span><span class="sub">living profile</span></div>
-<main>${typeSection}${literacySection}${thinkingSection}${trajSection}</main>
+<main>${coverage?.provisional ? `<div style="margin-top:24px;background:#fff2d6;color:#7a4a12;border-radius:14px;padding:12px 18px;font-size:14px;line-height:1.5"><strong>Provisional read.</strong> Computed from only ${Number(coverage.conversationCount)} conversation${coverage.conversationCount === 1 ? '' : 's'} of chat history; levels read low on thin history. A fuller import gives a more reliable picture.</div>` : ''}${typeSection}${literacySection}${thinkingSection}${trajSection}</main>
 <footer>${esc(provenance)} Public-domain Jungian dichotomies (E/I, S/N, T/F, J/P). Not affiliated with or derived from the Myers-Briggs Type Indicator® or The Myers-Briggs Company.</footer>
 </body></html>`;
 }
@@ -382,10 +383,24 @@ export function createApp(db: Database, opts: { inviteToken: string; ogRender?: 
     const url = new URL(c.req.url);
     const proto = c.req.header('x-forwarded-proto') ?? url.protocol.replace(':', '');
     const ogImageUrl = `${proto}://${url.host}/og/${c.req.param('token')}.png`;
+    // The thin-history caveat travels with the shared page: a provisional profile must
+    // not read as a confident verdict to a recruiter clicking the badge.
+    const prof = db.query('SELECT profile_json FROM profile_versions WHERE user_key = ? ORDER BY version DESC LIMIT 1')
+      .get(owner.user_key) as { profile_json: string } | null;
+    let coverage: { provisional: boolean; conversationCount: number } | undefined;
+    if (prof) {
+      try {
+        const parsed = JSON.parse(prof.profile_json) as { coverage?: { provisional?: unknown; conversationCount?: unknown } };
+        if (parsed.coverage && typeof parsed.coverage.provisional === 'boolean' && typeof parsed.coverage.conversationCount === 'number') {
+          coverage = { provisional: parsed.coverage.provisional, conversationCount: parsed.coverage.conversationCount };
+        }
+      } catch { /* stored JSON is trusted but stay defensive; no banner beats a 500 */ }
+    }
     return c.html(renderReportPage(
       pubs.map((s) => ({ type: s.type, surfacedContent: JSON.parse(s.surfaced_json) as Record<string, unknown> })),
       PROVENANCE_LABEL,
       ogImageUrl,
+      coverage,
     ));
   });
 

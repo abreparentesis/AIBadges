@@ -156,6 +156,31 @@ describe('signals + sharing', () => {
     expect(gone.status).toBe(404);
   });
 
+  it('surfaces the thin-history caveat on the share page, and only then', async () => {
+    const app = makeApp();
+    const share = async (key: string, profile: unknown) => {
+      await call(app, 'POST', '/v1/profile', { key, invite: INVITE, body: profile });
+      const pub = await call(app, 'POST', '/v1/signals', {
+        key, body: [{ type: 'identityCard', surfacedContent: { headline: 'h' }, disclosure: 'public' }],
+      });
+      const token = (await pub.json()).signals[0].shareToken as string;
+      return (await app.request(`/s/${token}`)).text();
+    };
+
+    // provisional coverage -> banner with the conversation count
+    const provisional = { ...sampleProfile, coverage: { provisional: true, conversationCount: 5, evidenceConversations: 2 } };
+    const withBanner = await share('kprov', provisional);
+    expect(withBanner).toContain('Provisional read');
+    expect(withBanner).toContain('only 5 conversations');
+
+    // adequate coverage -> no banner
+    const adequate = { ...sampleProfile, coverage: { provisional: false, conversationCount: 40, evidenceConversations: 9 } };
+    expect(await share('kfull', adequate)).not.toContain('Provisional read');
+
+    // legacy push without coverage -> accepted, no banner
+    expect(await share('klegacy', sampleProfile)).not.toContain('Provisional read');
+  });
+
   it('rejects signals from an unknown user without an invite', async () => {
     const res = await call(makeApp(), 'POST', '/v1/signals', { key: 'ghost', body: [] });
     expect(res.status).toBe(401);
@@ -264,8 +289,10 @@ describe('AI Fluency Index (statBadge) share render', () => {
 
     const page = await app.request(`/s/${typeToken}`);
     const html = await page.text();
-    expect(html).not.toContain('AI Fluency Index');
+    // The brand string appears in the topbar on every page since the rebrand, so assert on
+    // the private section's CONTENT staying absent, not on the brand name.
     expect(html).not.toContain('Stage 5');
+    expect(html).not.toContain('Delegation');
   });
 });
 
