@@ -96,3 +96,24 @@ Why, and what it actually tells us:
   provisional (it already grades confidence by evidence, which this validates).
 - Better future anchors: behavioral splits within WildChat (e.g. technical-workflow users
   vs casual), or opt-in self-assessment from real product users once live.
+
+## Better ground-truth candidates (Exa deep-research sweep, 2026-07-07)
+
+Adversarially verified (14/14 claims confirmed, 3-vote panel per claim). Three 2024-2026
+academic releases pair per-user chat histories with an EXTERNAL skill measure — the
+combination PRISM lacked. No dataset anywhere pairs chats with a validated AI-literacy
+scale score; all anchors are task-outcome proxies.
+
+| Dataset | Histories per user | External anchor | Access | Fit |
+|---|---|---|---|---|
+| ChatBench (https://huggingface.co/datasets/microsoft/ChatBench, ACL 2025) | ~810 Prolific workers × ~9 AI-assisted conversations (7,336 total) | Per-question MMLU correctness (acc 0/1) PLUS a within-user user-alone baseline — enabling "accuracy delta = marginal benefit extracted from AI" per user | CC-BY-4.0, open | **Best**: largest n, objective anchor, and the delta measure is conceptually identical to AI fluency |
+| StudyChat (https://huggingface.co/datasets/wmcnicho/StudyChat, LAK 2026) | 203 students × ~11 conversations across a real semester (2,214 total) | Assignment (a1-a7) and exam (e1-e3) scores for consenting students; the paper itself regresses dialogue features on grades | CC-BY-4.0, gated (accept terms) | **Second**: most naturalistic longitudinal histories; course-domain only |
+| RealHumanEval (https://huggingface.co/datasets/hsseinmz/realhumaneval, TMLR 2024) | 213-243 coders, chat keyed by programmer_id, but a single ~35-min session (~1,055 chat messages total) | Objective coding-task completion (private unit tests) + time-to-success | CC0, open | Weak-moderate: gold anchor but single-session histories are thinner than PRISM's |
+
+Recommended validation design (ChatBench): score each worker's Phase-2 transcripts blind
+with the engine, then correlate against (a) AI-assisted accuracy and (b) the
+assisted-minus-alone accuracy delta. The delta is the cleanest available operational
+definition of fluency: how much value this person extracts from the same AI on the same
+kind of task. Mind the PRISM lesson: ChatBench conversations are short task QA, so expect
+compressed bands; the correlation, not absolute levels, is the test. StudyChat is the
+follow-up if the ChatBench signal is positive (longitudinal realism, grade anchors).
