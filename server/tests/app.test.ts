@@ -203,7 +203,7 @@ describe('share viewer (HTML)', () => {
     const pub = await call(app, 'POST', '/v1/signals', {
       key: 'k1',
       body: [{ type: 'statBadge', surfacedContent: {
-        fluencyScore: 62, level: 'Intermediate', yeggeStage: 4,
+        fluencyScore: 62, level: 'Intermediate', yeggeStage: 4, source: 'ChatGPT',
         aiFluency: { delegation: 'proficient', description: 'advanced', discernment: 'developing', diligence: 'emerging' },
       }, disclosure: 'public' }],
     });
@@ -216,6 +216,7 @@ describe('share viewer (HTML)', () => {
     expect(html).toContain('62/100');                 // score consistent with the private view
     expect(html).toContain('Intermediate');            // human level
     expect(html).toContain('Measured');                // when it was measured (from the pushed profile)
+    expect(html).toContain('ChatGPT conversations');   // per-provider URLs say which history this is
     expect(html).toContain('hand off to AI');          // dimension explained in plain language
     expect(html).toContain('Get the Chrome extension'); // viewer nudge
     expect(html).not.toContain('living profile');      // retired topbar sub

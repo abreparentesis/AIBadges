@@ -51,7 +51,8 @@ export default defineBackground(() => {
   // User pressed Stop: same teardown but no error state — return to rest (or the prior profile).
   const cancelCg = async () => {
     disarmCg(); await closeCgTab();
-    const hasProfile = Number((await chrome.storage.local.get('aibadges:latestVersion'))['aibadges:latestVersion'] ?? 0) > 0;
+    const slots = await chrome.storage.local.get(['aibadges:latestVersion:claude', 'aibadges:latestVersion:chatgpt', 'aibadges:latestVersion']);
+    const hasProfile = Object.values(slots).some((v) => Number(v ?? 0) > 0);
     await chrome.storage.local.set({ 'aibadges:cg:running': 0, 'aibadges:progress': null, 'aibadges:status': hasProfile ? 'done' : 'idle' });
     await chrome.storage.local.remove(['aibadges:cg:tabId', 'aibadges:cg:autorun']);
     hasProfile ? done() : idle();

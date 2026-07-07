@@ -90,13 +90,14 @@ function renderReportPage(
 
   const score = statC?.fluencyScore;
   const level = typeof statC?.level === 'string' ? statC.level : '';
+  const source = typeof statC?.source === 'string' ? statC.source : ''; // "Claude" | "ChatGPT"
   const headline = statC
     ? (score !== undefined ? `${esc(score)}/100` : `Stage ${esc(statC.yeggeStage ?? '?')}`)
     : '';
 
   const og = statC
-    ? `<meta property="og:title" content="AI Fluency Index — ${esc(headline)}${level ? ` (${esc(level)})` : ''}">
-<meta property="og:description" content="Assessed from real chat history across four fluency dimensions. Every claim anchored to evidence.">
+    ? `<meta property="og:title" content="AI Fluency Index${source ? ` · ${esc(source)}` : ''} — ${esc(headline)}${level ? ` (${esc(level)})` : ''}">
+<meta property="og:description" content="Assessed from real ${source ? `${esc(source)} ` : ''}chat history across four fluency dimensions. Every claim anchored to evidence.">
 <meta property="og:site_name" content="AI Fluency Index">`
     : '<meta property="og:title" content="AI Fluency Index profile">';
   const ogImage = ogImageUrl
@@ -111,7 +112,9 @@ function renderReportPage(
   if (meta?.computedAt && fmtDate(meta.computedAt)) measuredBits.push(`Measured ${fmtDate(meta.computedAt)}`);
   if (sw?.conversationCount) {
     const span = fmtMonth(sw.fromDate) && fmtMonth(sw.toDate) ? ` spanning ${fmtMonth(sw.fromDate)} – ${fmtMonth(sw.toDate)}` : '';
-    measuredBits.push(`from ${Number(sw.conversationCount)} conversations${span}`);
+    measuredBits.push(`from ${Number(sw.conversationCount)} ${source ? `${source} ` : ''}conversations${span}`);
+  } else if (source) {
+    measuredBits.push(`from their ${source} history`);
   }
   const measured = measuredBits.join(' ');
 

@@ -1,13 +1,14 @@
 import type { KV } from './types';
+import type { Provider } from './provider';
 
-const USER_KEY = 'aibadges:userKey';
-
-// An opaque per-user key, generated once and persisted locally. Sent as the bearer token.
-// No PII; isolates each user on the backend.
-export async function ensureUserKey(kv: KV): Promise<string> {
-  const existing = await kv.get(USER_KEY);
+// An opaque key per provider, generated once and persisted locally. Sent as the
+// bearer token. No PII; separate keys give each provider its own backend
+// profile, badge, and share URL (option B of the multi-provider design).
+export async function ensureUserKey(kv: KV, provider: Provider): Promise<string> {
+  const slot = `aibadges:userKey:${provider}`;
+  const existing = await kv.get(slot);
   if (existing) return existing;
   const key = globalThis.crypto.randomUUID().replace(/-/g, '') + globalThis.crypto.randomUUID().replace(/-/g, '');
-  await kv.set(USER_KEY, key);
+  await kv.set(slot, key);
   return key;
 }

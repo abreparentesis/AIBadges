@@ -3,7 +3,7 @@ import { distill } from '../engine/distill';
 import { ProfileStore } from '../store/local';
 import { chromeKv } from '../store/chrome-kv';
 import { ensureUserKey } from '../store/userkey';
-import { BackendSync, NEEDS_REPUSH_KEY } from '../sync/backend';
+import { BackendSync, needsRepushKey } from '../sync/backend';
 import { BACKEND_URL, INVITE_TOKEN } from '../config';
 import type { CaptureBundle } from '../capture/chatgpt-export';
 import type { Profile } from '../engine/types';
@@ -39,21 +39,21 @@ export async function importGptReply(replyText: string, deps: ImportDeps = {}): 
   const bundle = await loadCaptureBundle(kv);
   if (!bundle) throw new Error('No captured ChatGPT history found. Capture it first, then try again.');
 
-  const store = new ProfileStore(kv);
+  const store = new ProfileStore(kv, 'chatgpt');
   const version = (await store.latestVersion()) + 1;
   const profile = profileFromGptOutput(replyText, bundle, { version, now });
 
   await store.saveProfileVersion(profile);
-  await kv.set('aibadges:signals', JSON.stringify(distill(profile, now)));
+  await kv.set('aibadges:signals:chatgpt', JSON.stringify(distill(profile, now, undefined, 'ChatGPT')));
   try {
-    const userKey = await ensureUserKey(kv);
+    const userKey = await ensureUserKey(kv, 'chatgpt');
     await new BackendSync({
       backendUrl: deps.backendUrl ?? BACKEND_URL,
       inviteToken: deps.inviteToken ?? INVITE_TOKEN,
       userKey,
       fetchFn: deps.fetchFn,
     }).pushProfile(profile);
-    await kv.set(NEEDS_REPUSH_KEY, '0'); // fresh push satisfies the post-delete repush guarantee
+    await kv.set(needsRepushKey('chatgpt'), '0'); // fresh push satisfies the post-delete repush guarantee
   } catch (e) { console.warn('[aibadges] sync failed (non-fatal):', (e as Error)?.message ?? 'unknown'); }
 
   await kv.set('aibadges:status', 'done');

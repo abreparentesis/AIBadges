@@ -8,7 +8,7 @@ export const PROVENANCE_LABEL =
 
 // fluencyOnly gates the personality-lens signals (identity, trajectory, type): the product
 // currently ships fluency-only, so only the statBadge is distilled and can ever be shared.
-export function distill(profile: Profile, now: string, fluencyOnly = FLUENCY_ONLY): Signal[] {
+export function distill(profile: Profile, now: string, fluencyOnly = FLUENCY_ONLY, source?: string): Signal[] {
   const base = { fromProfileVersion: profile.version, disclosure: 'private' as const,
     provenanceLabel: PROVENANCE_LABEL, createdAt: now };
 
@@ -50,6 +50,7 @@ export function distill(profile: Profile, now: string, fluencyOnly = FLUENCY_ONL
         // Headline score + human level travel with the badge so the share page and OG
         // image can lead with them (older badges without these fall back to the stage).
         ...(profile.capability.fluencyScore !== undefined ? { fluencyScore: profile.capability.fluencyScore } : {}),
+        ...(source ? { source } : {}), // "Claude" | "ChatGPT" — labels the per-provider share page
         level: namedLevel(profile.capability.yeggeStage.stage).name,
         aiFluency: {
           delegation: f.delegation.band, description: f.description.band,

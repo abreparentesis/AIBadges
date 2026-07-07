@@ -3,7 +3,9 @@ import '../../src/ui/theme.css';
 import type { Profile, Signal } from '../../src/engine/types';
 import { lookupType } from '../../src/engine/typeTable';
 import { ensureUserKey } from '../../src/store/userkey';
-import { BackendSync, NEEDS_REPUSH_KEY, repushIfNeeded } from '../../src/sync/backend';
+import { migrateLegacySlots, PROVIDERS, PROVIDER_LABEL, type Provider } from '../../src/store/provider';
+import { ProfileStore } from '../../src/store/local';
+import { BackendSync, needsRepushKey, repushIfNeeded } from '../../src/sync/backend';
 import { BACKEND_URL, INVITE_TOKEN, shareUrl, FLUENCY_ONLY } from '../../src/config';
 import { buildAddToProfileUrl, buildShareOnLinkedInUrl, defaultShareText, stageDrift } from '../../src/sync/linkedin';
 import { namedLevel } from '../../src/engine/levels';
@@ -36,6 +38,8 @@ export default function App() {
   const [busy, setBusy] = useState('');
   const [tab, setTab] = useState<Tab>(FLUENCY_ONLY ? 'literacy' : 'personality');
   const [publishedStage, setPublishedStage] = useState('');
+  const [provider, setProvider] = useState<Provider>('claude');
+  const [available, setAvailable] = useState<Provider[]>([]);
 
   // Index the verified quotes once per profile, then resolve claim/axis/shift ids → quotes.
   // Old profiles may lack `evidence`; quotesFor then yields [] and no expander is rendered.
@@ -51,10 +55,17 @@ export default function App() {
     return out;
   };
 
-  async function load() {
-    const latest = Number((await kv.get('aibadges:latestVersion')) ?? '0');
-    if (latest > 0) { const p = await kv.get(`aibadges:profile:${latest}`); if (p) setProfile(JSON.parse(p)); }
-    const s = await kv.get('aibadges:signals');
+  async function load(pick?: Provider) {
+    await migrateLegacySlots(kv);
+    const found: Provider[] = [];
+    for (const pr of PROVIDERS) {
+      if ((await new ProfileStore(kv, pr).latestVersion()) > 0) found.push(pr);
+    }
+    setAvailable(found);
+    const active = pick ?? (found.includes(provider) ? provider : (found[0] ?? 'claude'));
+    setProvider(active);
+    setProfile(await new ProfileStore(kv, active).loadLatestProfile());
+    const s = await kv.get(`aibadges:signals:${active}`);
     if (s) {
       // Normalize legacy 3-level disclosure (published / unlistedLink) down to public.
       const parsed = (JSON.parse(s) as UiSignal[]).map((sig) =>
@@ -65,7 +76,7 @@ export default function App() {
       if (FLUENCY_ONLY && parsed.some((sig) => sig.type !== 'statBadge' && sig.disclosure === 'public')) {
         void (async () => {
           try {
-            const userKey = await ensureUserKey(kv);
+            const userKey = await ensureUserKey(kv, active);
             const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
             await sync.setSignals(parsed
               .filter((sig) => sig.type !== 'statBadge' && sig.disclosure === 'public')
@@ -73,12 +84,14 @@ export default function App() {
             const next = parsed.map((sig) =>
               (sig.type !== 'statBadge' ? { ...sig, disclosure: 'private' as Signal['disclosure'], shareToken: null } : sig));
             setSignals(next);
-            await kv.set('aibadges:signals', JSON.stringify(next));
+            await kv.set(`aibadges:signals:${active}`, JSON.stringify(next));
           } catch { /* offline or server error: retried next time the page opens */ }
         })();
       }
+    } else {
+      setSignals([]); // switching to a provider with no stored signals must not show the other's
     }
-    setPublishedStage((await kv.get('aibadges:publishedStage')) ?? '');
+    setPublishedStage((await kv.get(`aibadges:publishedStage:${active}`)) ?? '');
   }
   useEffect(() => {
     void load();
@@ -92,14 +105,14 @@ export default function App() {
     if (!confirm('Delete your badge data from the AI Fluency Index server? Your profile stays on this device, but share links will stop working.')) return;
     setBusy('delete-server');
     try {
-      const userKey = await ensureUserKey(kv);
+      const userKey = await ensureUserKey(kv, provider);
       await new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey }).deleteServerData();
       const next = signals.map((s) => ({ ...s, disclosure: 'private' as Signal['disclosure'], shareToken: null }));
       setSignals(next);
-      await kv.set('aibadges:signals', JSON.stringify(next));
-      await kv.set(NEEDS_REPUSH_KEY, '1'); // the next share must re-push the profile first
+      await kv.set(`aibadges:signals:${provider}`, JSON.stringify(next));
+      await kv.set(needsRepushKey(provider), '1'); // the next share must re-push the profile first
       setPublishedStage('');
-      await kv.set('aibadges:publishedStage', '');
+      await kv.set(`aibadges:publishedStage:${provider}`, '');
       alert('Deleted. Our server no longer holds any data for you.');
     } catch (e) { alert('Delete failed: ' + String(e)); } finally { setBusy(''); }
   }
@@ -109,20 +122,20 @@ export default function App() {
     if (disclosure === sig.disclosure) return; // no-op click: no network call, nothing to change
     setBusy(sig.type);
     try {
-      const userKey = await ensureUserKey(kv);
+      const userKey = await ensureUserKey(kv, provider);
       const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
       // Only when publishing: a private toggle must never recreate server state after a delete.
-      if (disclosure === 'public') await repushIfNeeded(kv, sync);
+      if (disclosure === 'public') await repushIfNeeded(kv, sync, provider);
       const [res] = await sync
         .setSignals([{ type: sig.type, surfacedContent: sig.surfacedContent, disclosure }]);
       const next = signals.map((s) => (s.type === sig.type ? { ...s, disclosure, shareToken: res?.shareToken ?? null } : s));
       setSignals(next);
-      await kv.set('aibadges:signals', JSON.stringify(next));
+      await kv.set(`aibadges:signals:${provider}`, JSON.stringify(next));
       if (sig.type === 'statBadge') {
         const c = sig.surfacedContent as { fluencyScore?: number; yeggeStage?: number | string };
         const published = disclosure === 'public' ? String(c.fluencyScore ?? c.yeggeStage ?? '') : '';
         setPublishedStage(published);
-        await kv.set('aibadges:publishedStage', published);
+        await kv.set(`aibadges:publishedStage:${provider}`, published);
       }
     } catch (e) { alert('Share update failed: ' + String(e)); } finally { setBusy(''); }
   }
@@ -135,20 +148,20 @@ export default function App() {
     if (!sig?.shareToken) return;
     setBusy('statBadge');
     try {
-      const userKey = await ensureUserKey(kv);
+      const userKey = await ensureUserKey(kv, provider);
       const sync = new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey });
-      await repushIfNeeded(kv, sync);
+      await repushIfNeeded(kv, sync, provider);
       const [res] = await sync.setSignals([{ type: 'statBadge', surfacedContent: sig.surfacedContent, disclosure: 'public' }]);
       const next = signals.map((s) => (s.type === 'statBadge' ? { ...s, disclosure: 'public' as Signal['disclosure'], shareToken: res?.shareToken ?? null } : s));
       setSignals(next);
-      await kv.set('aibadges:signals', JSON.stringify(next));
+      await kv.set(`aibadges:signals:${provider}`, JSON.stringify(next));
       const c = sig.surfacedContent as { fluencyScore?: number; yeggeStage?: number | string; level?: string };
       const published = String(c.fluencyScore ?? c.yeggeStage ?? '');
       setPublishedStage(published);
-      await kv.set('aibadges:publishedStage', published);
+      await kv.set(`aibadges:publishedStage:${provider}`, published);
       if (res?.shareToken && profile) {
         window.open(buildAddToProfileUrl({
-          score: published, level: c.level ?? namedLevel(Number(c.yeggeStage) || 1).name,
+          score: published, level: c.level ?? namedLevel(Number(c.yeggeStage) || 1).name, source: PROVIDER_LABEL[provider],
           computedAt: profile.computedAt,
           shareUrl: shareUrl(res.shareToken), token: res.shareToken,
         }), '_blank');
@@ -162,11 +175,7 @@ export default function App() {
   }
 
   const ty = profile.type;
-  // Source provider drives copy: chats stay on-device for Claude (in-session), or go to the user's
-  // own ChatGPT for the GPT path — but in neither case do they reach our servers.
-  const provider = profile.evidence?.[0]?.sourceRef.provider
-    ?? (profile.modelProvenance.includes('chatgpt') ? 'chatgpt' : 'claude');
-  const sourceLabel = provider === 'chatgpt' ? 'ChatGPT' : 'Claude';
+  const sourceLabel = PROVIDER_LABEL[provider];
   const sigFor = (type: string) => signals.find((s) => s.type === type);
   const isPublic = (type: string) => sigFor(type)?.disclosure === 'public';
   const toggle = (type: string, next: Signal['disclosure']) => {
@@ -179,6 +188,21 @@ export default function App() {
 
   return (
     <Shell>
+      {available.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, marginBottom: 18 }} role="tablist" aria-label="Profile source">
+          {PROVIDERS.filter((pr) => available.includes(pr)).map((pr) => (
+            <button key={pr} type="button" role="tab" aria-selected={pr === provider}
+              onClick={() => { if (pr !== provider && !busy) void load(pr); }}
+              style={{
+                fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', borderRadius: 50,
+                padding: '6px 16px', border: `1px solid ${pr === provider ? t.blue : t.g200}`,
+                background: pr === provider ? t.blue : t.white, color: pr === provider ? '#fff' : t.g700,
+              }}>
+              {PROVIDER_LABEL[pr]}
+            </button>
+          ))}
+        </div>
+      )}
       {!FLUENCY_ONLY && <Tabs tab={tab} onPick={setTab} />}
       {!FLUENCY_ONLY && tab === 'personality' && (<>
       <div className="bb-eyebrow">Living profile · v{profile.version}</div>
@@ -367,12 +391,12 @@ export default function App() {
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <a href={buildAddToProfileUrl({ score: scoreNow, level: level.name, computedAt: profile.computedAt, shareUrl: link, token: sig.shareToken })}
+                    <a href={buildAddToProfileUrl({ score: scoreNow, level: level.name, source: sourceLabel, computedAt: profile.computedAt, shareUrl: link, token: sig.shareToken })}
                       target="_blank" rel="noreferrer"
                       style={{ fontSize: 13, fontWeight: 600, textDecoration: 'none', borderRadius: 50, padding: '7px 16px', background: '#0A66C2', color: '#fff' }}>
                       Add to LinkedIn profile
                     </a>
-                    <a href={buildShareOnLinkedInUrl(link, defaultShareText(scoreNow, level.name))} target="_blank" rel="noreferrer"
+                    <a href={buildShareOnLinkedInUrl(link, defaultShareText(scoreNow, level.name, sourceLabel))} target="_blank" rel="noreferrer"
                       style={{ fontSize: 13, fontWeight: 600, textDecoration: 'none', borderRadius: 50, padding: '7px 16px', border: `1px solid ${t.g300}`, color: t.g700 }}>
                       Share on LinkedIn
                     </a>

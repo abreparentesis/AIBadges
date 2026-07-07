@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { BackendSync, chatPrivateProfile, repushIfNeeded, NEEDS_REPUSH_KEY } from '../../src/sync/backend';
+import { BackendSync, chatPrivateProfile, repushIfNeeded, needsRepushKey } from '../../src/sync/backend';
+
+const RK = needsRepushKey('claude');
 import type { Profile } from '../../src/engine/types';
 
 const profile = { version: 1 } as unknown as Profile;
@@ -104,11 +106,11 @@ describe('repushIfNeeded (post-deletion profile re-push)', () => {
       backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
       fetchFn: fakeFetch(captured, () => new Response(JSON.stringify({ version: 1 }), { status: 200 })),
     });
-    const kv = memKv({ [NEEDS_REPUSH_KEY]: '1', 'aibadges:latestVersion': '2', 'aibadges:profile:2': storedProfile });
-    expect(await repushIfNeeded(kv, sync)).toBe(true);
+    const kv = memKv({ [RK]: '1', 'aibadges:latestVersion:claude': '2', 'aibadges:profile:claude:2': storedProfile });
+    expect(await repushIfNeeded(kv, sync, 'claude')).toBe(true);
     expect(captured.reqs[0].url).toBe('https://api.test/v1/profile');
     expect(JSON.stringify(JSON.parse(captured.reqs[0].init!.body as string))).not.toContain('SECRET-VERBATIM-CHAT-LINE');
-    expect(await kv.get(NEEDS_REPUSH_KEY)).toBe('0');
+    expect(await kv.get(RK)).toBe('0');
   });
 
   it('does nothing when the flag is not set', async () => {
@@ -117,8 +119,8 @@ describe('repushIfNeeded (post-deletion profile re-push)', () => {
       backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
       fetchFn: fakeFetch(captured, () => new Response('{}', { status: 200 })),
     });
-    const kv = memKv({ 'aibadges:latestVersion': '2', 'aibadges:profile:2': storedProfile });
-    expect(await repushIfNeeded(kv, sync)).toBe(false);
+    const kv = memKv({ 'aibadges:latestVersion:claude': '2', 'aibadges:profile:claude:2': storedProfile });
+    expect(await repushIfNeeded(kv, sync, 'claude')).toBe(false);
     expect(captured.reqs.length).toBe(0);
   });
 
@@ -128,10 +130,10 @@ describe('repushIfNeeded (post-deletion profile re-push)', () => {
       backendUrl: 'https://api.test', inviteToken: 'INV', userKey: 'uk1',
       fetchFn: fakeFetch(captured, () => new Response('{}', { status: 200 })),
     });
-    const kv = memKv({ [NEEDS_REPUSH_KEY]: '1' });
-    expect(await repushIfNeeded(kv, sync)).toBe(false);
+    const kv = memKv({ [RK]: '1' });
+    expect(await repushIfNeeded(kv, sync, 'claude')).toBe(false);
     expect(captured.reqs.length).toBe(0);
-    expect(await kv.get(NEEDS_REPUSH_KEY)).toBe('0');
+    expect(await kv.get(RK)).toBe('0');
   });
 });
 

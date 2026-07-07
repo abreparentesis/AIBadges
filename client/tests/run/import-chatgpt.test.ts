@@ -47,9 +47,9 @@ describe('importGptReply', () => {
     const profile = await importGptReply(reply, { kv, now: '2026-06-08T00:00:00Z', fetchFn: async () => new Response(JSON.stringify({ version: 1 }), { status: 200 }) });
 
     expect(profile.thinking.length).toBeGreaterThan(0);
-    expect(kv.store['aibadges:profile:1']).toBeTruthy();
-    expect(kv.store['aibadges:latestVersion']).toBe('1');
-    expect(kv.store['aibadges:signals']).toBeTruthy();
+    expect(kv.store['aibadges:profile:chatgpt:1']).toBeTruthy();
+    expect(kv.store['aibadges:latestVersion:chatgpt']).toBe('1');
+    expect(kv.store['aibadges:signals:chatgpt']).toBeTruthy();
     expect(kv.store['aibadges:status']).toBe('done');
     expect(kv.store[CAPTURE_KEY]).toBe(''); // raw chat payload dropped
   });
@@ -66,7 +66,7 @@ describe('importGptReply', () => {
     expect(bodies[0]).not.toContain('SECRET-CHATGPT-LINE-B');
     expect(JSON.parse(bodies[0]).evidence).toBeUndefined();
     // but the on-device profile keeps the quotes for the audit view
-    const stored = JSON.parse(kv.store['aibadges:profile:1']);
+    const stored = JSON.parse(kv.store['aibadges:profile:chatgpt:1']);
     expect(JSON.stringify(stored)).toContain('SECRET-CHATGPT-LINE-A');
   });
 

@@ -6,7 +6,7 @@ import { distill } from '../src/engine/distill';
 import { ProfileStore } from '../src/store/local';
 import { chromeKv } from '../src/store/chrome-kv';
 import { ensureUserKey } from '../src/store/userkey';
-import { BackendSync, NEEDS_REPUSH_KEY } from '../src/sync/backend';
+import { BackendSync, needsRepushKey } from '../src/sync/backend';
 import { BACKEND_URL, INVITE_TOKEN } from '../src/config';
 import { pickModels } from '../src/engine/models';
 import { selectAcrossTimeline } from '../src/capture/select';
@@ -39,7 +39,7 @@ export default defineContentScript({
         if (!org) throw new Error('No Claude organization found (are you logged in?)');
 
         const adapter = new ClaudeCaptureAdapter(org);
-        const store = new ProfileStore(chromeKv);
+        const store = new ProfileStore(chromeKv, 'claude');
         // Sample across the WHOLE history (oldest->newest), not just the most recent, so the
         // trajectory lens sees real span. The char budget below is sized to cover all of these.
         const conversations = selectAcrossTimeline(await adapter.listConversations(), 40);
@@ -79,12 +79,12 @@ export default defineContentScript({
             throw new Error('The analysis produced no fluency result this run (usually a transient Claude error — try again in a minute). Your existing profile, if any, was kept.');
           }
           await store.saveProfileVersion(profile);
-          await chromeKv.set('aibadges:signals', JSON.stringify(distill(profile, now)));
+          await chromeKv.set('aibadges:signals:claude', JSON.stringify(distill(profile, now, undefined, 'Claude')));
           let synced: number | string;
           try {
-            const userKey = await ensureUserKey(chromeKv);
+            const userKey = await ensureUserKey(chromeKv, 'claude');
             synced = (await new BackendSync({ backendUrl: BACKEND_URL, inviteToken: INVITE_TOKEN, userKey }).pushProfile(profile)).version;
-            await chromeKv.set(NEEDS_REPUSH_KEY, '0'); // fresh push satisfies the post-delete repush guarantee
+            await chromeKv.set(needsRepushKey('claude'), '0'); // fresh push satisfies the post-delete repush guarantee
           } catch (e) { console.warn('[aibadges] sync failed (non-fatal)', e); synced = `error: ${String(e)}`; }
           console.log('[aibadges] done', { version, capturedChars, fast, best, thinking: profile.thinking.length, type: profile.type?.code ?? null, shifts: profile.trajectory.shifts.length, synced });
           return version;

@@ -1,5 +1,7 @@
 import type { Profile } from '../engine/types';
 import type { KV } from '../store/types';
+import type { Provider } from '../store/provider';
+import { ProfileStore } from '../store/local';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
@@ -34,16 +36,15 @@ export function chatPrivateProfile<T extends object>(profile: T): T {
 
 // Set after a server-side deletion; the next share re-pushes the profile first, so server
 // signals never exist without a backing profile version (a delete-then-reshare would
-// otherwise resurrect the badge as orphaned signals).
-export const NEEDS_REPUSH_KEY = 'aibadges:needsProfileRepush';
+// otherwise resurrect the badge as orphaned signals). Per provider, like every other slot.
+export const needsRepushKey = (provider: Provider) => `aibadges:needsProfileRepush:${provider}`;
 
-export async function repushIfNeeded(kv: KV, sync: BackendSync): Promise<boolean> {
-  if ((await kv.get(NEEDS_REPUSH_KEY)) !== '1') return false;
-  const latest = Number((await kv.get('aibadges:latestVersion')) ?? '0');
-  const raw = latest > 0 ? await kv.get(`aibadges:profile:${latest}`) : null;
-  if (raw) await sync.pushProfile(JSON.parse(raw) as Profile); // pushProfile strips evidence
-  await kv.set(NEEDS_REPUSH_KEY, '0');
-  return raw != null;
+export async function repushIfNeeded(kv: KV, sync: BackendSync, provider: Provider): Promise<boolean> {
+  if ((await kv.get(needsRepushKey(provider))) !== '1') return false;
+  const profile = await new ProfileStore(kv, provider).loadLatestProfile();
+  if (profile) await sync.pushProfile(profile); // pushProfile strips evidence
+  await kv.set(needsRepushKey(provider), '0');
+  return profile != null;
 }
 
 export class BackendSync {
