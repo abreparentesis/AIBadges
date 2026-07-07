@@ -2,7 +2,7 @@ import { ChatGPTCaptureAdapter } from '../src/capture/chatgpt';
 import { selectAcrossTimeline } from '../src/capture/select';
 import { buildChatGptExport } from '../src/capture/chatgpt-export';
 import { runBridge } from '../src/capture/chatgpt-bridge';
-import { runAutoProfile } from '../src/capture/chatgpt-autorun';
+import { runAutoProfile, runExtractionBatch } from '../src/capture/chatgpt-autorun';
 import type { RawConversation } from '../src/capture/types';
 
 // ChatGPT path on chatgpt.com. Default flow is INVISIBLE: the service worker opens this page in a
@@ -34,6 +34,20 @@ export default defineContentScript({
         // Prefill the composer + watch for the reply. The user presses send; we never auto-submit.
         runBridge(String(msg.prompt ?? ''), notify);
         sendResponse({ ok: true });
+        return false;
+      }
+      if (msg?.type === 'aibadges:cg-run-batch') {
+        // Extraction worker: this background tab was spawned by the service worker to run ONE
+        // evidence-extraction batch in its own throwaway conversation. runExtractionBatch never
+        // throws (a failed batch writes its failure marker for the orchestrator); when it settles
+        // we ask the service worker to close this tab.
+        if (running) { sendResponse({ ok: false, error: 'already running' }); return false; }
+        running = true;
+        sendResponse({ ok: true, started: true });
+        const batch = Number(msg.batch);
+        runExtractionBatch(batch, notify)
+          .catch((e) => console.error('[aibadges] chatgpt extraction worker failed', e))
+          .finally(() => { running = false; notify({ type: 'aibadges:cg-batch-tab-done', batch }); });
         return false;
       }
       if (msg?.type !== 'aibadges:cg-capture') return;

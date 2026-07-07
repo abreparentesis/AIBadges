@@ -4,31 +4,45 @@ import { buildChatGptExport } from './chatgpt-export';
 import { buildExtractionPrompt, buildSynthesisFromEvidence, buildAuditPrompt } from './chatgpt-prompt';
 import { setComposer, clickSend, hasChallenge } from './chatgpt-bridge';
 import { importGptReply, CAPTURE_KEY } from '../run/import-chatgpt';
+import { CG_BATCH_OUT_PREFIX, CG_BATCH_CONVO_PREFIX, batchOutKey, batchConvoKey } from './cg-keys';
 import type { RawConversation } from './types';
-import type { CaptureBundle } from '../run/import-chatgpt';
+import type { CaptureBundle } from './chatgpt-export';
 
-// Fully invisible ChatGPT run inside a (background) chatgpt.com tab: capture history, run the
-// analysis in a throwaway conversation, read the reply from the backend API (which works even when
-// the tab is hidden, unlike the DOM which does not render while backgrounded), delete the
-// conversation, and import. Nothing is left in the user's ChatGPT history, mirroring how the Claude
-// path uses a scratch conversation it deletes. The only DOM coupling is the submit (fill + send).
+// Fully invisible ChatGPT run inside (background) chatgpt.com tabs: capture history, run the
+// analysis in throwaway conversations, read the replies from the backend API (which works even when
+// a tab is hidden, unlike the DOM which does not render while backgrounded), delete the
+// conversations, and import. Nothing is left in the user's ChatGPT history, mirroring how the
+// Claude path uses a scratch conversation it deletes. The only DOM coupling is the submit
+// (fill + send), which each tab does in its own composer.
 //
-// RELIABILITY MODEL (added after real-world mid-flight failures): the run is 5+ sequential model
-// turns, so it must survive any single turn dying. Every completed turn is checkpointed to
-// chrome.storage.local; a re-run resumes from the checkpoint in a FRESH throwaway conversation
-// (extraction and synthesis prompts are self-contained, so nothing depends on the old one, which
-// gets deleted at resume). Long turns emit a heartbeat so the service worker's watchdog knows the
-// run is alive; reply waits are step-aware and only time out after a minimum number of REAL polls,
-// because hidden-tab timers are throttled to as little as one tick per minute.
+// PARALLEL EXTRACTION: the extraction prompt is self-contained (each batch carries its own INPUT
+// and the pooled evidence is re-injected into synthesis client-side), so extraction batches don't
+// need to share a conversation. The orchestrator tab — the one the service worker opened with the
+// autorun flag — asks the service worker to spawn up to EXTRACT_TAB_CONCURRENCY background worker
+// tabs, each running ONE batch in its own throwaway conversation (runExtractionBatch), writing its
+// evidence units to storage, deleting its conversation, and closing. Synthesis and audit then run
+// sequentially in ONE conversation in the orchestrator tab (the audit references the synthesis
+// in-conversation, so they cannot be split).
+//
+// RELIABILITY MODEL (added after real-world mid-flight failures): the run is many model turns, so
+// it must survive any single turn dying. Every completed batch is checkpointed per-batch to
+// chrome.storage.local (completion can be out of order); a re-run resumes from the checkpoint in
+// FRESH throwaway conversations. Long turns emit a heartbeat so the service worker's watchdog
+// knows the run is alive; reply waits are step-aware and only time out after a minimum number of
+// REAL polls, because hidden-tab timers are throttled to as little as one tick per minute.
 
 type Notify = (m: Record<string, unknown>) => void;
 
 const BASE = 'https://chatgpt.com';
-const TOTAL_CONVOS = 60;           // two clean extraction batches; 90 cost a third multi-minute GPT turn
-                                   // for little band movement, and 60 sits closer to the Claude path's 40
-                                   // (smaller cross-provider window gap)
+const TOTAL_CONVOS = 90;           // three extraction batches; affordable again because they run in
+                                   // parallel worker tabs, so 90 costs the same wall-clock as the
+                                   // old sequential 60 (ceil(3/2) waves at concurrency 2)
 const BATCH_SIZE = 30;             // conversations per extraction turn (map step): small enough that one
                                    // batch's evidence reply won't hit the model's output limit and truncate
+// Parallel background worker tabs for the extraction batches. 2 is the sweet spot; hard cap 3 —
+// more simultaneous hidden conversations risks rate limits and login challenges.
+export const EXTRACT_TAB_CONCURRENCY = 2;
+const MAX_EXTRACT_TABS = 3;
 const PER_CONVO_CHARS = 2500;      // user-centric capture packs a chat into far less than the old 4000
 const ASSISTANT_HEAD_CHARS = 160;  // keep only a short head of each AI turn — enough to judge a reaction
 
@@ -40,6 +54,12 @@ const CKPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const EXTRACT_TIMEOUT_MS = 240_000;
 const REDUCE_TIMEOUT_MS = 420_000;
 const MIN_POLLS = 8; // a timeout only counts after this many actual polls (hidden-tab timer throttling)
+// How long the orchestrator waits for one worker tab's result before writing the batch off. A
+// worker's own budget is 2 attempts x (reply wait + conversation binding), and hidden-tab timer
+// throttling can stretch its MIN_POLLS gate to ~1 poll/minute — so this is generous on purpose;
+// it only fires for a tab that is truly dead (crashed, or redirected where our script never runs).
+const BATCH_TAB_DEADLINE_MS = 20 * 60_000;
+const BATCH_POLL_MS = 2000;
 
 async function accessToken(): Promise<string> {
   const s = await fetch(`${BASE}/api/auth/session`, { credentials: 'include' }).then((r) => r.json()).catch(() => null);
@@ -63,12 +83,42 @@ async function topConversationId(token: string): Promise<string | null> {
   } catch { return null; }
 }
 
+// Does this conversation contain a user message that ends with our prompt's tail? Used to verify
+// that a fallback-bound conversation is really OURS: with several worker tabs creating throwaway
+// conversations at once (and the user possibly chatting in a foreground tab), "most recently
+// updated" alone could bind to — and later delete — someone else's conversation. The tail of the
+// prompt is distinct per batch (it ends in that batch's INPUT JSON / evidence pool).
+function mappingHasUserText(mapping: Record<string, CGNode>, tail: string): boolean {
+  for (const n of Object.values(mapping)) {
+    const m = n?.message;
+    if (m?.author?.role !== 'user') continue;
+    const text = ((m.content?.parts ?? []).filter((p): p is string => typeof p === 'string').join('')).trim();
+    if (text.endsWith(tail)) return true;
+  }
+  return false;
+}
+
+async function conversationMatchesPrompt(id: string, token: string, prompt: string): Promise<boolean> {
+  const tail = prompt.trim().slice(-300);
+  for (let i = 0; i < 2; i++) {
+    const c = await fetch(`${BASE}/backend-api/conversation/${encodeURIComponent(id)}`, {
+      credentials: 'include', headers: { authorization: `Bearer ${token}` },
+    }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (c?.mapping && mappingHasUserText(c.mapping as Record<string, CGNode>, tail)) return true;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+
 // After a submit, ChatGPT navigates from "/" to "/c/{id}" a beat later (once the response starts), so
 // the id is not there immediately. Poll the URL until it appears. Fallback (SPA route lagging in a
 // throttled tab): take the most-recently-updated conversation — but ONLY if it is NEW since the run
-// started (differs from preTopId). Otherwise the top chat is a real user conversation, and binding to
-// it would post analysis prompts into, and later hide, a genuine chat. Fail loudly instead.
-async function awaitConversationId(token: string, preTopId: string | null, timeoutMs = 45000, everyMs = 800): Promise<string | null> {
+// started (differs from preTopId) AND actually contains our own prompt (a sibling worker tab or the
+// user could have created the newest conversation). Otherwise fail loudly instead of binding to,
+// and later deleting, a conversation that isn't ours.
+async function awaitConversationId(
+  token: string, preTopId: string | null, ownPrompt: string, timeoutMs = 45000, everyMs = 800,
+): Promise<string | null> {
   const start = Date.now();
   let id = conversationId();
   while (!id && Date.now() - start < timeoutMs) {
@@ -77,16 +127,18 @@ async function awaitConversationId(token: string, preTopId: string | null, timeo
   }
   if (id) return id;
   const top = await topConversationId(token);
-  return top && top !== preTopId ? top : null;
+  if (!top || top === preTopId) return null;
+  return (await conversationMatchesPrompt(top, token, ownPrompt)) ? top : null;
 }
 
-// Fill the composer and click ChatGPT's own send button, retrying while React enables the button.
-// A visible challenge means we cannot submit unattended, so surface it rather than hang.
-async function submitPrompt(prompt: string): Promise<void> {
-  for (let i = 0; i < 20; i++) {
+// Fill the composer and click ChatGPT's own send button, retrying while React enables the button
+// (and, in a freshly spawned worker tab, while the composer is still mounting). A visible challenge
+// means we cannot submit unattended, so surface it rather than hang.
+async function submitPrompt(prompt: string, tries = 40, everyMs = 500): Promise<void> {
+  for (let i = 0; i < tries; i++) {
     if (hasChallenge()) throw new Error('ChatGPT is showing a verification step. Open chatgpt.com, then run again.');
     if (setComposer(prompt) && clickSend()) return;
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, everyMs));
   }
   throw new Error('Could not submit the analysis prompt to ChatGPT.');
 }
@@ -177,8 +229,39 @@ async function deleteConversation(id: string, token: string): Promise<void> {
   }).catch(() => { /* best-effort cleanup */ });
 }
 
+// One model turn with a single retry, parameterized per conversation so the orchestrator tab
+// (synthesis + audit in one conversation) and each extraction worker tab (one batch in its own
+// conversation) share the exact same submit → bind → reply-wait pattern. The first turn binds the
+// conversation id and reports it via onBound (checkpointing for later cleanup).
+interface TurnCtx {
+  token: string;
+  preTopId: string | null;
+  id: string | null;
+  lastNode?: string;
+  onBound?: (id: string) => Promise<void> | void;
+}
+async function runTurnIn(ctx: TurnCtx, prompt: string, timeoutMs: number, notify: Notify): Promise<{ text: string; node: string }> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await submitPrompt(prompt);
+      if (!ctx.id) {
+        ctx.id = await awaitConversationId(ctx.token, ctx.preTopId, prompt);
+        if (!ctx.id) throw new Error('ChatGPT did not start a conversation.');
+        await ctx.onBound?.(ctx.id);
+      }
+      const reply = await awaitReply(ctx.id, ctx.token, notify, ctx.lastNode, timeoutMs);
+      ctx.lastNode = reply.node;
+      return reply;
+    } catch (e) {
+      if (attempt >= 2) throw e;
+      notify({ type: 'aibadges:cg-heartbeat' });
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+}
+
 // ---- batched map-reduce helpers ----
-type RawUnit = { conversationId: string; quote: string; summary: string; type: string };
+export type RawUnit = { conversationId: string; quote: string; summary: string; type: string };
 type PooledUnit = RawUnit & { id: string };
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -196,8 +279,8 @@ function parseJsonBlock(raw: string): unknown {
 }
 
 // Pull the evidence units out of one extraction reply ({"evidence":[...]} or a bare array). The
-// model's own ids are dropped — the caller assigns globally-unique ids across batches so citations
-// stay stable regardless of how each batch numbered its units.
+// model's own ids are dropped — the pool assembly assigns globally-unique ids across batches so
+// citations stay stable regardless of how each batch numbered its units.
 export function parseEvidence(reply: string): RawUnit[] {
   let arr: unknown[] = [];
   try {
@@ -219,6 +302,17 @@ export function parseEvidence(reply: string): RawUnit[] {
     });
   }
   return out;
+}
+
+// Flatten the per-batch units into the single id-stable pool the synthesis prompt embeds. Ids are
+// assigned in BATCH-INDEX order (not completion order), so parallel out-of-order completion and a
+// resumed run always produce the same e1..eN numbering for the same set of completed batches.
+export function assemblePool(unitsByBatch: Record<string, RawUnit[]>, doneBatches: number[]): PooledUnit[] {
+  const pooled: PooledUnit[] = [];
+  for (const b of [...doneBatches].sort((a, z) => a - z)) {
+    for (const u of unitsByBatch[b] ?? []) pooled.push({ ...u, id: `e${pooled.length + 1}` });
+  }
+  return pooled;
 }
 
 // Assemble the object the importer expects: the client-owned pooled evidence, the profile from
@@ -251,42 +345,51 @@ export function combineForImport(pooled: PooledUnit[], synthReply: string, audit
 // ---- checkpoint / resume ----
 
 export interface AutorunCheckpoint {
-  v: 1;
-  startedAt: string;       // ISO; a checkpoint older than CKPT_MAX_AGE_MS is discarded
-  totalBatches: number;    // to detect a capture-shape mismatch (then the checkpoint is unusable)
-  batchesDone: number;
-  skippedBatches: number[]; // batches that failed twice and were skipped (coverage note)
-  pooled: PooledUnit[];
-  synthText?: string;      // present once synthesis completed
-  convoId?: string;        // the old throwaway; deleted on resume (a fresh one is started)
+  v: 2;
+  startedAt: string;        // ISO; a checkpoint older than CKPT_MAX_AGE_MS is discarded
+  totalBatches: number;     // to detect a capture-shape mismatch (then the checkpoint is unusable)
+  doneBatches: number[];    // batch indices whose evidence was extracted (completion may be out of order)
+  skippedBatches: number[]; // batches that failed all retries and were skipped (coverage note)
+  unitsByBatch: Record<string, RawUnit[]>; // per-batch raw units; ids are assigned at assembly time
+  synthText?: string;       // present once synthesis completed
+  convoId?: string;         // the orchestrator's throwaway (synthesis/audit); deleted on resume
 }
 
 export interface RunPlan {
   resume: boolean;
-  batchesDone: number;
+  doneBatches: number[];
   skippedBatches: number[];
-  pooled: PooledUnit[];
+  unitsByBatch: Record<string, RawUnit[]>;
   synthText?: string;
   staleConvoId?: string;
 }
 
-const FRESH: RunPlan = { resume: false, batchesDone: 0, skippedBatches: [], pooled: [] };
+const fresh = (staleConvoId?: string): RunPlan => ({
+  resume: false, doneBatches: [], skippedBatches: [], unitsByBatch: {},
+  ...(staleConvoId ? { staleConvoId } : {}),
+});
 
-// Decide what a run can reuse from a prior interrupted run. Pure, for tests. A stale or
-// shape-mismatched checkpoint yields a fresh plan but still surfaces the old throwaway
-// conversation id so it can be cleaned up.
+// Decide what a run can reuse from a prior interrupted run. Pure, for tests. A stale,
+// shape-mismatched, or legacy (v1, count-based) checkpoint yields a fresh plan but still surfaces
+// the old throwaway conversation id so it can be cleaned up.
 export function planRun(raw: unknown, totalBatches: number, nowMs: number, maxAgeMs = CKPT_MAX_AGE_MS): RunPlan {
   const c = raw as AutorunCheckpoint | null | undefined;
-  if (!c || typeof c !== 'object' || c.v !== 1 || !Array.isArray(c.pooled)) return FRESH;
+  if (!c || typeof c !== 'object') return fresh();
+  const staleId = typeof c.convoId === 'string' && c.convoId ? c.convoId : undefined;
+  if (c.v !== 2 || !Array.isArray(c.doneBatches) || !c.unitsByBatch || typeof c.unitsByBatch !== 'object') return fresh(staleId);
   const stale = !c.startedAt || nowMs - Date.parse(c.startedAt) > maxAgeMs;
-  if (stale || c.totalBatches !== totalBatches) return { ...FRESH, staleConvoId: c.convoId };
+  if (stale || c.totalBatches !== totalBatches) return fresh(staleId);
+  const inRange = (b: unknown): b is number => typeof b === 'number' && Number.isInteger(b) && b >= 0 && b < totalBatches;
+  const doneBatches = [...new Set(c.doneBatches.filter(inRange))];
+  const skippedBatches = [...new Set((Array.isArray(c.skippedBatches) ? c.skippedBatches : []).filter(inRange))]
+    .filter((b) => !doneBatches.includes(b));
   return {
-    resume: c.batchesDone > 0 || !!c.synthText,
-    batchesDone: Math.min(c.batchesDone ?? 0, totalBatches),
-    skippedBatches: Array.isArray(c.skippedBatches) ? c.skippedBatches : [],
-    pooled: c.pooled,
+    resume: doneBatches.length > 0 || skippedBatches.length > 0 || !!c.synthText,
+    doneBatches,
+    skippedBatches,
+    unitsByBatch: c.unitsByBatch,
     synthText: typeof c.synthText === 'string' && c.synthText ? c.synthText : undefined,
-    staleConvoId: c.convoId,
+    staleConvoId: staleId,
   };
 }
 
@@ -300,6 +403,97 @@ async function loadCkpt(): Promise<unknown> {
   const raw = (await chrome.storage.local.get(CKPT_KEY))[CKPT_KEY];
   if (typeof raw !== 'string' || !raw) return null;
   try { return JSON.parse(raw); } catch { return null; }
+}
+
+// ---- extraction worker (runs in ITS OWN background tab, one batch per tab) ----
+
+// Run one extraction batch in this tab's own throwaway conversation and hand the result to the
+// orchestrator through storage (content scripts can't message each other directly). Never throws:
+// a batch that fails all retries writes { failed: true } so the orchestrator can skip it without
+// killing the run. The scratch conversation is deleted on every path, and its id is checkpointed
+// to storage the moment it binds so even a crashed tab's conversation gets cleaned up next run.
+export async function runExtractionBatch(batch: number, notify: Notify): Promise<void> {
+  const write = (out: { units?: RawUnit[]; failed?: true }) =>
+    chrome.storage.local.set({ [batchOutKey(batch)]: JSON.stringify(out) });
+  const ctx: TurnCtx = { token: '', preTopId: null, id: null };
+  try {
+    const stored = (await chrome.storage.local.get(CAPTURE_KEY))[CAPTURE_KEY];
+    if (typeof stored !== 'string' || !stored) throw new Error('No capture bundle for the extraction batch.');
+    const bundle = JSON.parse(stored) as CaptureBundle;
+    const convos = chunk(bundle.export.conversations, BATCH_SIZE)[batch];
+    if (!convos?.length) throw new Error('Extraction batch out of range.');
+    const subBundle = { export: { ...bundle.export, conversations: convos }, idMap: bundle.idMap, capturedAt: bundle.capturedAt };
+    ctx.token = await accessToken();
+    ctx.preTopId = await topConversationId(ctx.token);
+    ctx.onBound = (id) => chrome.storage.local.set({ [batchConvoKey(batch)]: id });
+    const reply = await runTurnIn(ctx, buildExtractionPrompt(subBundle), EXTRACT_TIMEOUT_MS, notify);
+    await write({ units: parseEvidence(reply.text) });
+  } catch (e) {
+    console.error('[aibadges] chatgpt extraction batch failed', batch, e);
+    await write({ failed: true });
+  } finally {
+    if (ctx.id && ctx.token) await deleteConversation(ctx.id, ctx.token);
+    await chrome.storage.local.remove(batchConvoKey(batch)).catch?.(() => { /* best effort */ });
+  }
+}
+
+// ---- orchestrator-side parallel batch driver ----
+
+// Delete leftovers of a prior interrupted run's workers: stray scratch conversations (recorded via
+// batchConvoKey by workers that died before their own cleanup) and stale result payloads.
+async function cleanupBatchLeftovers(token: string): Promise<void> {
+  const all = await chrome.storage.local.get(null);
+  const keys = Object.keys(all).filter((k) => k.startsWith(CG_BATCH_OUT_PREFIX) || k.startsWith(CG_BATCH_CONVO_PREFIX));
+  for (const k of keys) {
+    const v = all[k];
+    if (k.startsWith(CG_BATCH_CONVO_PREFIX) && typeof v === 'string' && v) await deleteConversation(v, token);
+  }
+  if (keys.length) await chrome.storage.local.remove(keys);
+}
+
+// Fan the remaining batches out over background worker tabs, at most EXTRACT_TAB_CONCURRENCY at a
+// time. The service worker owns tab lifecycle (spawn on 'aibadges:cg-spawn-batch', close on the
+// worker's 'aibadges:cg-batch-tab-done' or our 'aibadges:cg-kill-batch'); results come back through
+// storage. The poll loop doubles as this tab's heartbeat source so the watchdog stays fed while
+// only worker tabs are doing model work. onDone fires once per batch — units on success (possibly
+// empty), null when the batch failed all retries or its tab went dark past the deadline.
+async function runBatchesInTabs(
+  remaining: number[], notify: Notify,
+  onDone: (batch: number, units: RawUnit[] | null) => Promise<void>,
+): Promise<void> {
+  const queue = [...remaining].sort((a, z) => a - z);
+  const inFlight = new Map<number, number>(); // batch -> spawnedAt (ms)
+  const concurrency = Math.min(Math.max(1, EXTRACT_TAB_CONCURRENCY), MAX_EXTRACT_TABS);
+  const spawn = (batch: number) => new Promise<void>((res) => {
+    inFlight.set(batch, Date.now());
+    chrome.runtime.sendMessage({ type: 'aibadges:cg-spawn-batch', batch }, () => { void chrome.runtime.lastError; res(); });
+  });
+  while (queue.length && inFlight.size < concurrency) await spawn(queue.shift()!);
+  while (inFlight.size) {
+    await new Promise((r) => setTimeout(r, BATCH_POLL_MS));
+    notify({ type: 'aibadges:cg-heartbeat' });
+    const got = await chrome.storage.local.get([...inFlight.keys()].map(batchOutKey));
+    for (const [batch, spawnedAt] of [...inFlight]) {
+      const raw = got[batchOutKey(batch)];
+      if (typeof raw === 'string' && raw) {
+        inFlight.delete(batch);
+        await chrome.storage.local.remove(batchOutKey(batch));
+        let units: RawUnit[] | null = null;
+        try {
+          const out = JSON.parse(raw) as { units?: RawUnit[]; failed?: boolean };
+          units = Array.isArray(out.units) ? out.units : null;
+        } catch { units = null; }
+        await onDone(batch, units);
+      } else if (Date.now() - spawnedAt > BATCH_TAB_DEADLINE_MS) {
+        // The tab never reported back — dead or unreachable. Ask the service worker to close it
+        // and move on; its scratch conversation (if any) is cleaned up from batchConvoKey next run.
+        inFlight.delete(batch);
+        chrome.runtime.sendMessage({ type: 'aibadges:cg-kill-batch', batch }, () => void chrome.runtime.lastError);
+        await onDone(batch, null);
+      }
+    }
+    while (queue.length && inFlight.size < concurrency) await spawn(queue.shift()!);
+  }
 }
 
 export async function runAutoProfile(notify: Notify): Promise<void> {
@@ -331,71 +525,54 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   const allConvos = bundle.export.conversations;
   if (allConvos.length === 0) throw new Error('Captured no readable conversation text.');
 
-  // 2. Map-reduce analysis in ONE throwaway conversation. MAP: extract evidence in batches (each a
-  //    model turn) into a single client-owned, id-stable pool. REDUCE: synthesize the profile from
-  //    the whole pool, then adversarially audit the four fluency bands. Every completed turn is
-  //    checkpointed; a failed turn is retried once; a batch that fails twice is skipped rather than
-  //    sinking the run; a synthesis failure aborts RESUMABLY (checkpoint kept); a failed audit
-  //    degrades to importing the synthesis draft (combineForImport tolerates an empty audit).
+  // 2. Map-reduce analysis. MAP: extract evidence per batch, each batch a model turn in ITS OWN
+  //    throwaway conversation inside a parallel background worker tab (runBatchesInTabs), pooled
+  //    client-side into one id-stable set. REDUCE: synthesize the profile from the whole pool, then
+  //    adversarially audit the four fluency bands — sequentially, in ONE throwaway conversation in
+  //    THIS tab (the audit references the synthesis in-conversation). Every completed batch is
+  //    checkpointed as it lands (order-independent); a batch that fails its retries is skipped
+  //    rather than sinking the run; a synthesis failure aborts RESUMABLY (checkpoint kept); a
+  //    failed audit degrades to importing the synthesis draft (combineForImport tolerates it).
   const batches = chunk(allConvos, BATCH_SIZE);
   const plan = planRun(ckptRaw, batches.length, Date.now());
   const totalSteps = batches.length + 2;
-  let done = plan.batchesDone + (plan.synthText ? 1 : 0);
+  const doneBatches: number[] = [...plan.doneBatches];
+  const skippedBatches: number[] = [...plan.skippedBatches];
+  const unitsByBatch: Record<string, RawUnit[]> = { ...plan.unitsByBatch };
+  // Progress is counted in COMPLETED analysis steps (batches done or skipped, then synthesis, then
+  // audit) so the popup's step labels stay truthful even when batches finish out of order.
+  let done = doneBatches.length + skippedBatches.length + (plan.synthText ? 1 : 0);
   notify({ type: 'aibadges:cg-phase', phase: 'analysis', done, total: totalSteps });
 
   const token = await accessToken();
   if (plan.staleConvoId) await deleteConversation(plan.staleConvoId, token); // old throwaway from the interrupted run
-  const preTopId = await topConversationId(token);
-  const pooled: PooledUnit[] = [...plan.pooled];
-  const skippedBatches: number[] = [...plan.skippedBatches];
+  await cleanupBatchLeftovers(token); // stray worker conversations/results from the interrupted run
   const startedAt = new Date().toISOString();
-  let id: string | null = null;
-  let lastNode: string | undefined;
+  const main: TurnCtx = { token, preTopId: await topConversationId(token), id: null };
 
   const ckpt = (synthText?: string): AutorunCheckpoint => ({
-    v: 1, startedAt, totalBatches: batches.length, batchesDone: doneBatches, skippedBatches,
-    pooled, ...(synthText ? { synthText } : {}), ...(id ? { convoId: id } : {}),
+    v: 2, startedAt, totalBatches: batches.length, doneBatches: [...doneBatches],
+    skippedBatches: [...skippedBatches], unitsByBatch,
+    ...(synthText ? { synthText } : {}), ...(main.id ? { convoId: main.id } : {}),
   });
-  let doneBatches = plan.batchesDone;
+  const runTurn = (prompt: string, timeoutMs: number) => runTurnIn(main, prompt, timeoutMs, notify);
 
-  // One model turn with a single retry. The first turn also binds the throwaway conversation id.
-  const runTurn = async (prompt: string, timeoutMs: number): Promise<{ text: string; node: string }> => {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await submitPrompt(prompt);
-        if (!id) {
-          id = await awaitConversationId(token, preTopId);
-          if (!id) throw new Error('ChatGPT did not start a conversation.');
-        }
-        const reply = await awaitReply(id, token, notify, lastNode, timeoutMs);
-        lastNode = reply.node;
-        return reply;
-      } catch (e) {
-        if (attempt >= 2) throw e;
-        notify({ type: 'aibadges:cg-heartbeat' });
-        await new Promise((r) => setTimeout(r, 2000));
-      }
-    }
-  };
-
-  // Once the throwaway conversation exists it should not outlive the run: it is deleted on success
-  // and on TERMINAL failure. On a RESUMABLE failure it is kept and recorded in the checkpoint, and
-  // the next run deletes it before starting fresh — losing it would strand analysis prompts in the
-  // user's history, but deleting it eagerly would also delete nothing of value since every reply is
-  // already checkpointed.
+  // Once the orchestrator's throwaway conversation exists it should not outlive the run: it is
+  // deleted on success and on TERMINAL failure. On a RESUMABLE failure it is kept and recorded in
+  // the checkpoint, and the next run deletes it before starting fresh — losing it would strand
+  // analysis prompts in the user's history, but deleting it eagerly would also delete nothing of
+  // value since every reply is already checkpointed. Worker tabs delete their own conversations.
   try {
-    for (let b = doneBatches; b < batches.length; b++) {
-      const subBundle = { export: { ...bundle.export, conversations: batches[b] }, idMap: bundle.idMap, capturedAt: bundle.capturedAt };
-      try {
-        const reply = await runTurn(buildExtractionPrompt(subBundle), EXTRACT_TIMEOUT_MS);
-        for (const u of parseEvidence(reply.text)) pooled.push({ ...u, id: `e${pooled.length + 1}` });
-      } catch {
-        skippedBatches.push(b); // twice-failed batch: keep going with partial coverage
-      }
-      doneBatches = b + 1;
-      await saveCkpt(ckpt());
-      notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
+    const remaining = batches.map((_, i) => i).filter((b) => !doneBatches.includes(b) && !skippedBatches.includes(b));
+    if (remaining.length) {
+      await runBatchesInTabs(remaining, notify, async (b, units) => {
+        if (units) { unitsByBatch[b] = units; doneBatches.push(b); }
+        else skippedBatches.push(b); // twice-failed batch: keep going with partial coverage
+        await saveCkpt(ckpt());
+        notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
+      });
     }
+    const pooled = assemblePool(unitsByBatch, doneBatches);
     if (pooled.length === 0) {
       await clearCkpt();
       throw new Error('ChatGPT returned no usable evidence from your history.');
@@ -417,7 +594,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
     try {
       // The audit turn references the synthesis in-conversation. On resume the synthesis happened in
       // the deleted throwaway, so replay it first in this fresh conversation to restore context.
-      if (plan.synthText && !lastNode) {
+      if (plan.synthText && !main.lastNode) {
         await runTurn(buildSynthesisFromEvidence(pooled), REDUCE_TIMEOUT_MS);
       }
       auditText = (await runTurn(buildAuditPrompt(), REDUCE_TIMEOUT_MS)).text;
@@ -426,7 +603,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
 
     // 3. Delete the throwaway BEFORE signaling done (the done message closes this tab, which would
     //    abort an in-flight delete), then combine and import.
-    if (id) await deleteConversation(id, token);
+    if (main.id) await deleteConversation(main.id, token);
     await clearCkpt();
     const profile = await importGptReply(combineForImport(pooled, synthText, auditText));
     notify({ type: 'aibadges:done', version: profile.version });
@@ -435,7 +612,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
     // Resumable failures keep the checkpoint (and its convoId for later cleanup). Terminal ones
     // (no evidence) cleared it above; delete the throwaway for those.
     const resumable = (await loadCkpt()) !== null;
-    if (id && !resumable) await deleteConversation(id, token);
+    if (main.id && !resumable) await deleteConversation(main.id, token);
     throw e;
   }
 }

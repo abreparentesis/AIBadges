@@ -1,3 +1,5 @@
+import { CG_WORKERS_KEY, batchOutKey } from '../src/capture/cg-keys';
+
 // Service worker: owns the action badge dot and run status/progress.
 // blue idle/rest → amber while profiling → green when a fresh profile is ready → blue again once
 // the profile is opened. A watchdog flips out of "profiling" if the Claude.ai tab is closed mid-run.
@@ -37,9 +39,69 @@ export default defineBackground(() => {
   const armCg = () => chrome.alarms.create(CG_WATCHDOG, { when: Date.now() + CG_WATCHDOG_MS });
   const disarmCg = () => chrome.alarms.clear(CG_WATCHDOG);
   const notifyPopup = (m: Record<string, unknown>) => chrome.runtime.sendMessage(m, () => void chrome.runtime.lastError);
+
+  // ---- parallel extraction worker tabs (spawned for the ChatGPT run's extraction batches) ----
+  // The orchestrator content script asks for one tab per batch ('aibadges:cg-spawn-batch'); we open
+  // it, and once it finishes loading push 'aibadges:cg-run-batch' into it (send → inject → send,
+  // the same pattern the popup uses to start a capture). The live map is kept in storage so a
+  // service-worker restart mid-run can still find and close every tab we opened. Mutations of the
+  // map are serialized through a promise chain — spawn acks, batch-done, and kill can interleave.
+  type CgWorker = { batch: number; started?: boolean };
+  let cgOps: Promise<unknown> = Promise.resolve();
+  const cgSerial = <T,>(fn: () => Promise<T>): Promise<T> => {
+    const p = cgOps.then(fn, fn);
+    cgOps = p.catch(() => undefined);
+    return p;
+  };
+  const getCgWorkers = async (): Promise<Record<string, CgWorker>> => {
+    const v = (await chrome.storage.local.get(CG_WORKERS_KEY))[CG_WORKERS_KEY];
+    return v && typeof v === 'object' ? { ...(v as Record<string, CgWorker>) } : {};
+  };
+  const setCgWorkers = (w: Record<string, CgWorker>) => chrome.storage.local.set({ [CG_WORKERS_KEY]: w });
+  // A worker tab we can never reach (e.g. redirected to a login host where our script won't load)
+  // would otherwise stall the orchestrator until its deadline; fail its batch fast instead.
+  const failBatchFast = (batch: number) => chrome.storage.local.set({ [batchOutKey(batch)]: '{"failed":true}' });
+  const startBatchInTab = async (tabId: number, batch: number): Promise<boolean> => {
+    const send = () => new Promise<boolean>((res) => {
+      chrome.tabs.sendMessage(tabId, { type: 'aibadges:cg-run-batch', batch }, (r) => {
+        if (chrome.runtime.lastError) { res(false); return; }
+        const resp = r as { ok?: boolean; error?: string } | undefined;
+        res(resp?.ok === true || resp?.error === 'already running');
+      });
+    });
+    if (await send()) return true;
+    try { await chrome.scripting.executeScript({ target: { tabId }, files: ['content-scripts/chatgpt-capture.js'] }); } catch { return false; }
+    return await send();
+  };
+  chrome.tabs.onUpdated.addListener((tabId, info) => {
+    if (info.status !== 'complete') return;
+    void cgSerial(async () => {
+      const workers = await getCgWorkers();
+      const w = workers[String(tabId)];
+      if (!w || w.started) return; // not one of ours, or its batch already started
+      w.started = true;
+      await setCgWorkers(workers);
+      if (!(await startBatchInTab(tabId, w.batch))) {
+        await failBatchFast(w.batch);
+        await chrome.tabs.remove(tabId).catch(() => { /* already gone */ });
+        const ws = await getCgWorkers();
+        delete ws[String(tabId)];
+        await setCgWorkers(ws);
+      }
+    });
+  });
+
+  // Close the orchestrator tab AND every extraction worker tab we opened (never the user's own
+  // ChatGPT tabs — only ids we recorded).
   const closeCgTab = async () => {
-    const tid = (await chrome.storage.local.get('aibadges:cg:tabId'))['aibadges:cg:tabId'];
+    const g = await chrome.storage.local.get(['aibadges:cg:tabId', CG_WORKERS_KEY]);
+    const tid = g['aibadges:cg:tabId'];
     if (typeof tid === 'number') await chrome.tabs.remove(tid).catch(() => { /* already gone */ });
+    const workers = g[CG_WORKERS_KEY];
+    if (workers && typeof workers === 'object') {
+      for (const k of Object.keys(workers)) await chrome.tabs.remove(Number(k)).catch(() => { /* already gone */ });
+    }
+    await chrome.storage.local.remove(CG_WORKERS_KEY);
   };
   // Stuck ChatGPT run -> stop it: clear state, close the (invisible) worker tab, tell an open popup.
   const failCg = (reason: string) => {
@@ -122,9 +184,48 @@ export default defineBackground(() => {
   });
 
   let blink = false;
-  chrome.runtime.onMessage.addListener((msg, sender) => {
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id) return;
     switch (msg?.type) {
+      case 'aibadges:cg-spawn-batch': {
+        // Orchestrator wants a background worker tab for one extraction batch. Ack only after the
+        // worker map is written, so the orchestrator's sequential spawns can't race each other.
+        const batch = Number(msg.batch);
+        void cgSerial(async () => {
+          const tab = await new Promise<{ id?: number } | undefined>((res) => chrome.tabs.create({ url: 'https://chatgpt.com/', active: false }, res));
+          if (tab?.id == null) { await failBatchFast(batch); return; }
+          const workers = await getCgWorkers();
+          workers[String(tab.id)] = { batch };
+          await setCgWorkers(workers);
+        }).then(() => sendResponse({ ok: true }));
+        armCg();
+        return true; // async sendResponse
+      }
+      case 'aibadges:cg-batch-tab-done': {
+        // A worker tab finished its batch (result already in storage): close it and forget it.
+        const tid = sender.tab?.id;
+        if (tid != null) {
+          chrome.tabs.remove(tid).catch(() => { /* already gone */ });
+          void cgSerial(async () => {
+            const workers = await getCgWorkers();
+            delete workers[String(tid)];
+            await setCgWorkers(workers);
+          });
+        }
+        armCg(); break;
+      }
+      case 'aibadges:cg-kill-batch':
+        // Orchestrator gave up on a batch whose tab went dark: close that tab if we still know it.
+        void cgSerial(async () => {
+          const workers = await getCgWorkers();
+          for (const [tid, w] of Object.entries(workers)) {
+            if (w.batch !== Number(msg.batch)) continue;
+            await chrome.tabs.remove(Number(tid)).catch(() => { /* already gone */ });
+            delete workers[tid];
+          }
+          await setCgWorkers(workers);
+        });
+        armCg(); break;
       case 'aibadges:start':
         chrome.storage.local.set({ 'aibadges:status': 'running', 'aibadges:startedAt': Date.now(), 'aibadges:progress': null });
         blink = true; running(); arm(); break;
@@ -164,15 +265,18 @@ export default defineBackground(() => {
         // User pressed Stop in the popup.
         void cancelCg(); break;
       case 'aibadges:cg-autorun-done':
-        // The invisible worker tab (the sender) finished: close it and surface the fresh profile.
+        // The invisible orchestrator tab (the sender) finished: close it — plus any extraction
+        // worker tab still lingering — and surface the fresh profile.
         disarm(); disarmCg();
         if (sender.tab?.id != null) chrome.tabs.remove(sender.tab.id).catch(() => { /* already gone */ });
+        void closeCgTab();
         chrome.storage.local.set({ 'aibadges:status': 'done', 'aibadges:progress': null, 'aibadges:cg:running': 0 });
         chrome.storage.local.remove('aibadges:cg:tabId'); done();
         chrome.tabs.create({ url: chrome.runtime.getURL('results.html') }); break;
       case 'aibadges:cg-autorun-error':
         disarm(); disarmCg();
         if (sender.tab?.id != null) chrome.tabs.remove(sender.tab.id).catch(() => { /* already gone */ });
+        void closeCgTab();
         chrome.storage.local.set({ 'aibadges:status': 'error', 'aibadges:error': String(msg.error ?? ''), 'aibadges:cg:running': 0 });
         chrome.storage.local.remove('aibadges:cg:tabId'); error(); break;
     }

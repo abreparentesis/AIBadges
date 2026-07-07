@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseEvidence, combineForImport, replyWaitDecision, planRun } from '../../src/capture/chatgpt-autorun';
+import { parseEvidence, combineForImport, replyWaitDecision, planRun, assemblePool } from '../../src/capture/chatgpt-autorun';
 import { buildSynthesisFromEvidence } from '../../src/capture/chatgpt-prompt';
 
 describe('parseEvidence (map step)', () => {
@@ -94,37 +94,86 @@ describe('replyWaitDecision (throttle-proof reply wait)', () => {
   });
 });
 
-describe('planRun (checkpoint resume)', () => {
+describe('planRun (per-batch checkpoint resume)', () => {
   const now = Date.parse('2026-07-07T12:00:00Z');
+  const u = (q: string) => ({ conversationId: 'c1', quote: q, summary: '', type: 'episode' });
   const ckpt = {
-    v: 1, startedAt: '2026-07-07T11:00:00Z', totalBatches: 3, batchesDone: 2, skippedBatches: [1],
-    pooled: [{ id: 'e1', conversationId: 'c1', quote: 'q', summary: '', type: 'episode' }],
+    v: 2, startedAt: '2026-07-07T11:00:00Z', totalBatches: 3,
+    doneBatches: [0, 2], skippedBatches: [],
+    unitsByBatch: { 0: [u('q-batch0')], 2: [u('q-batch2')] },
     convoId: 'old-convo',
   };
-  it('resumes a fresh checkpoint: skips done batches, keeps pool and skip list, surfaces the old convo', () => {
+  it('resumes out-of-order completion: batches 0 and 2 done, batch 1 still pending', () => {
     const p = planRun(ckpt, 3, now);
     expect(p.resume).toBe(true);
-    expect(p.batchesDone).toBe(2);
-    expect(p.skippedBatches).toEqual([1]);
-    expect(p.pooled.length).toBe(1);
+    expect(p.doneBatches).toEqual([0, 2]);
+    expect(p.skippedBatches).toEqual([]);
+    expect(p.unitsByBatch[0][0].quote).toBe('q-batch0');
+    expect(p.unitsByBatch[2][0].quote).toBe('q-batch2');
     expect(p.staleConvoId).toBe('old-convo');
+    // The only batch left to run is 1 — the same remaining-computation the orchestrator does.
+    const remaining = [0, 1, 2].filter((b) => !p.doneBatches.includes(b) && !p.skippedBatches.includes(b));
+    expect(remaining).toEqual([1]);
+  });
+  it('keeps the skip list and never re-runs a skipped batch', () => {
+    const p = planRun({ ...ckpt, doneBatches: [2], skippedBatches: [0] }, 3, now);
+    expect(p.resume).toBe(true);
+    expect(p.skippedBatches).toEqual([0]);
+    const remaining = [0, 1, 2].filter((b) => !p.doneBatches.includes(b) && !p.skippedBatches.includes(b));
+    expect(remaining).toEqual([1]);
+  });
+  it('drops out-of-range and duplicate batch indices instead of trusting them', () => {
+    const p = planRun({ ...ckpt, doneBatches: [0, 0, 2, 7, -1], skippedBatches: [2, 1] }, 3, now);
+    expect(p.doneBatches).toEqual([0, 2]);
+    expect(p.skippedBatches).toEqual([1]); // 2 is done, so it can't also be skipped
   });
   it('a checkpoint past synthesis resumes with the synth text', () => {
-    const p = planRun({ ...ckpt, batchesDone: 3, synthText: '{"thinking":[]}' }, 3, now);
+    const p = planRun({ ...ckpt, doneBatches: [0, 1, 2], synthText: '{"thinking":[]}' }, 3, now);
     expect(p.resume).toBe(true);
     expect(p.synthText).toBe('{"thinking":[]}');
   });
   it('discards a stale checkpoint but still surfaces the orphan conversation for cleanup', () => {
     const p = planRun({ ...ckpt, startedAt: '2026-07-05T11:00:00Z' }, 3, now);
     expect(p.resume).toBe(false);
-    expect(p.pooled).toEqual([]);
+    expect(p.doneBatches).toEqual([]);
+    expect(p.unitsByBatch).toEqual({});
     expect(p.staleConvoId).toBe('old-convo');
   });
   it('discards a checkpoint whose batch shape no longer matches the capture', () => {
     expect(planRun(ckpt, 5, now).resume).toBe(false);
   });
+  it('discards a legacy v1 (count-based) checkpoint but surfaces its conversation for cleanup', () => {
+    const v1 = {
+      v: 1, startedAt: '2026-07-07T11:00:00Z', totalBatches: 3, batchesDone: 2, skippedBatches: [1],
+      pooled: [{ id: 'e1', conversationId: 'c1', quote: 'q', summary: '', type: 'episode' }],
+      convoId: 'legacy-convo',
+    };
+    const p = planRun(v1, 3, now);
+    expect(p.resume).toBe(false);
+    expect(p.doneBatches).toEqual([]);
+    expect(p.staleConvoId).toBe('legacy-convo');
+  });
   it('handles null/garbage checkpoints', () => {
-    expect(planRun(null, 3, now)).toEqual({ resume: false, batchesDone: 0, skippedBatches: [], pooled: [] });
+    expect(planRun(null, 3, now)).toEqual({ resume: false, doneBatches: [], skippedBatches: [], unitsByBatch: {} });
     expect(planRun({ v: 9 }, 3, now).resume).toBe(false);
+  });
+});
+
+describe('assemblePool (id-stable pooling across parallel batches)', () => {
+  const u = (cid: string, q: string) => ({ conversationId: cid, quote: q, summary: '', type: 'episode' });
+  it('numbers ids by BATCH order, not completion order, so out-of-order runs and resumes agree', () => {
+    // Batch 2 finished before batch 0 (doneBatches records completion order).
+    const pooled = assemblePool({ 2: [u('c9', 'late')], 0: [u('c1', 'a'), u('c2', 'b')] }, [2, 0]);
+    expect(pooled.map((p) => p.id)).toEqual(['e1', 'e2', 'e3']);
+    expect(pooled[0].quote).toBe('a');   // batch 0 first, whatever finished first
+    expect(pooled[2].quote).toBe('late');
+  });
+  it('ignores units of batches not marked done and tolerates missing entries', () => {
+    const pooled = assemblePool({ 0: [u('c1', 'a')], 1: [u('c2', 'zombie')] }, [0, 2]);
+    expect(pooled).toHaveLength(1);
+    expect(pooled[0]).toEqual({ ...u('c1', 'a'), id: 'e1' });
+  });
+  it('returns [] when nothing completed (the all-batches-failed terminal case)', () => {
+    expect(assemblePool({}, [])).toEqual([]);
   });
 });

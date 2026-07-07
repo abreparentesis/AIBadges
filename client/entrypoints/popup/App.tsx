@@ -290,11 +290,13 @@ function ChatGptPanel() {
           <div style={{ fontSize: 13, color: t.g600, marginBottom: 12 }}>
             {prog?.phase === 'analysis'
               ? (() => {
-                  // total = extraction batches + synthesis + audit; naming the step makes a
-                  // multi-minute GPT-5.5 turn read as progress, not a hang.
+                  // total = extraction batches + synthesis + audit, done = COMPLETED steps; naming
+                  // the step makes a multi-minute GPT-5.5 turn read as progress, not a hang. The
+                  // extraction batches run in parallel tabs, so the label counts completions
+                  // instead of pretending they happen one at a time.
                   const total = prog.total || 4;
                   const batches = Math.max(1, total - 2);
-                  if (prog.done < batches) return `Step ${prog.done + 1} of ${total}: extracting evidence (batch ${prog.done + 1}/${batches}) — a few minutes per step`;
+                  if (prog.done < batches) return `Step ${prog.done + 1} of ${total}: extracting evidence in parallel (${prog.done}/${batches} batches done) — a few minutes`;
                   if (prog.done === batches) return `Step ${prog.done + 1} of ${total}: scoring your four fluencies — the longest step`;
                   return `Step ${Math.min(prog.done + 1, total)} of ${total}: adversarial audit of the scores`;
                 })()
