@@ -14,7 +14,8 @@ const bundle: CaptureBundle = {
     ],
   },
 };
-const opts = { version: 4, now: '2026-06-08T00:00:00Z' };
+// Legacy personality-shaped fixtures below predate fluency-only mode; pin them to the old behavior.
+const opts = { version: 4, now: '2026-06-08T00:00:00Z', fluencyOnly: false };
 
 const goodOutput = {
   thinking: [
@@ -92,6 +93,33 @@ describe('profileFromGptOutput', () => {
   it('throws GptImportError when nothing is evidence-backed', () => {
     const out = { thinking: [{ claim: 'x', evidenceIds: ['ghost'], confidence: 'low' }], evidence: [] };
     expect(() => profileFromGptOutput(JSON.stringify(out), bundle, opts)).toThrow(GptImportError);
+  });
+
+  // REGRESSION: the fluency-only autorun produces capability + evidence and (deliberately) no
+  // thinking/trajectory/type. The personality-era empty check discarded every such run.
+  it('keeps a fluency-only reply (capability + evidence, no personality lenses)', () => {
+    const out = {
+      capability: {
+        aiFluency: {
+          delegation: { band: 'proficient', note: 'You hand off whole analyses.', nextStep: 'State the decision up front.', evidenceIds: ['e1'] },
+          description: { band: 'proficient', note: 'You give goals plus constraints.', nextStep: 'Add your budget ceiling.', evidenceIds: ['e2'] },
+          discernment: { band: 'developing', note: 'You sometimes push back.', nextStep: 'Challenge the weakest number.', evidenceIds: ['e3'] },
+          diligence: { band: 'developing', note: 'You occasionally verify.', nextStep: 'Chase one citation yourself.', evidenceIds: ['e1'] },
+        },
+        yeggeStage: { stage: 4, evidenceIds: ['e1'] },
+        domains: [],
+      },
+      evidence: goodOutput.evidence,
+    };
+    const p = profileFromGptOutput(JSON.stringify(out), bundle, { ...opts, fluencyOnly: true });
+    expect(p.capability).toBeDefined();
+    expect(p.capability!.fluencyScore).toBeGreaterThan(0);
+    expect(p.thinking).toHaveLength(0);
+  });
+
+  it('throws GptImportError in fluency-only mode when the reply has no capability at all', () => {
+    const out = { evidence: goodOutput.evidence };
+    expect(() => profileFromGptOutput(JSON.stringify(out), bundle, { ...opts, fluencyOnly: true })).toThrow(GptImportError);
   });
 
   it('normalizes case-variant evidence type and confidence from the GPT', () => {

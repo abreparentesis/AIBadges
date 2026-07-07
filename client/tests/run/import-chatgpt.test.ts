@@ -20,8 +20,20 @@ const bundle: CaptureBundle = {
   },
 };
 
+// A realistic product reply: fluency capability (what the autorun produces) plus a legacy thinking
+// claim, so the pipeline is exercised in the shape the shipping FLUENCY_ONLY mode actually saves.
 const reply = JSON.stringify({
   thinking: [{ claim: 'Plans before acting', evidenceIds: ['e1', 'e2'], confidence: 'low' }],
+  capability: {
+    aiFluency: {
+      delegation: { band: 'developing', note: 'You hand off scoped tasks.', evidenceIds: ['e1'] },
+      description: { band: 'proficient', note: 'You give goals plus constraints.', evidenceIds: ['e2'] },
+      discernment: { band: 'developing', note: 'You sometimes push back.', evidenceIds: ['e1'] },
+      diligence: { band: 'emerging', note: 'You rarely verify.', evidenceIds: [] },
+    },
+    yeggeStage: { stage: 3, evidenceIds: ['e1'] },
+    domains: [],
+  },
   evidence: [
     { id: 'e1', conversationId: 'c1', quote: 'SECRET-CHATGPT-LINE-A', summary: 's', type: 'decision' },
     { id: 'e2', conversationId: 'c2', quote: 'SECRET-CHATGPT-LINE-B', summary: 's', type: 'decision' },

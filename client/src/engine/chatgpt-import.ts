@@ -1,5 +1,6 @@
 import { parseJsonResponse } from './json';
 import { assembleProfile } from './assemble';
+import { isEmptyProfile } from './profile';
 import type { CaptureBundle } from '../capture/chatgpt-export';
 import type { Profile, EvidenceUnit, Claim, Trajectory, CognitiveType, Confidence, Capability } from './types';
 
@@ -30,7 +31,7 @@ function readIds(o: AnyRec | undefined): string[] {
   return Array.isArray(raw) ? raw.map((x) => String(x)) : [];
 }
 
-export interface ImportOpts { version: number; now: string; }
+export interface ImportOpts { version: number; now: string; fluencyOnly?: boolean; }
 
 export class GptImportError extends Error {}
 
@@ -179,10 +180,12 @@ export function profileFromGptOutput(raw: string, bundle: CaptureBundle, opts: I
     },
   );
 
-  const empty = profile.thinking.length === 0 && profile.trajectory.shifts.length === 0 && !profile.type;
-  if (empty) {
+  // "Empty" is mode-aware: in fluency-only mode a profile with a capability lens is a KEEPER even
+  // though it (deliberately) has no thinking/trajectory/type — the personality-era check here
+  // discarded every fluency-only run (the same regression the Claude path hit).
+  if (isEmptyProfile(profile, opts.fluencyOnly)) {
     throw new GptImportError(
-      'That result had no evidence-backed claims, so nothing was saved. Make sure you pasted the whole reply, including the "evidence" list, and that each claim cites evidence ids.',
+      'That result had no usable fluency assessment, so nothing was saved. Run the analysis again — or if you pasted a reply, paste the whole JSON block including "capability". Your existing profile, if any, was kept.',
     );
   }
   return profile;
