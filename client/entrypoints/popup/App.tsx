@@ -5,7 +5,7 @@ import { chromeKv } from '../../src/store/chrome-kv';
 import { migrateLegacySlots, runKey } from '../../src/store/provider';
 
 type Provider = 'claude' | 'chatgpt';
-type Mode = 'init' | 'starting' | 'running' | 'done' | 'error' | 'needclaude';
+type Mode = 'init' | 'starting' | 'running' | 'done' | 'error' | 'needclaude' | 'stopped';
 type Progress = { phase: 'capture' | 'evidence' | 'synthesis'; done: number; total: number } | null;
 
 // One copy system for both providers: same run title, same phase vocabulary, same done/error
@@ -179,6 +179,14 @@ function ClaudePanel() {
     setMode((await startClaudeRun()) ? 'running' : 'needclaude');
   }
 
+  async function stopClaude() {
+    // Tell the in-page run to abort; it winds down through its cleanup and answers with
+    // 'aibadges:cancelled' (which also settles the badge + stored status via the worker).
+    const id = await findClaudeTab();
+    if (id != null) chrome.tabs.sendMessage(id, { type: 'aibadges:cancel' }, () => void chrome.runtime.lastError);
+    setMode(hasProfile ? 'done' : 'stopped');
+  }
+
   useEffect(() => {
     (async () => {
       const r = await chrome.storage.local.get([
@@ -189,6 +197,8 @@ function ClaudePanel() {
       setHasProfile(haveClaude);
       startedAt.current = (r[runKey('startedAt', 'claude')] as number) || Date.now();
       if (status === 'error') { setErr(String(r[runKey('error', 'claude')] || '')); setMode('error'); return; }
+      // Stopped by the user: rest state, and crucially do NOT auto-start a run they just cancelled.
+      if (status === 'cancelled') { setMode(haveClaude ? 'done' : 'stopped'); return; }
       if (status === 'running') {
         if (await pingAliveClaude()) {
           const pr = (r[runKey('progress', 'claude')] as Progress) ?? null;
@@ -208,6 +218,7 @@ function ClaudePanel() {
       else if (m?.type === 'aibadges:start') { startedAt.current = Date.now(); lastPct.current = 0; eta.current = null; setProgress(null); setMode('running'); }
       else if (m?.type === 'aibadges:done') { setHasProfile(true); setMode('done'); }
       else if (m?.type === 'aibadges:error') { setErr(String(m.error || '')); setMode('error'); }
+      else if (m?.type === 'aibadges:cancelled') { void latestVersionOf('claude').then((v) => setMode(v > 0 ? 'done' : 'stopped')); }
     };
     chrome.runtime.onMessage.addListener(onMsg);
     const timer = setInterval(() => setNowTs(Date.now()), 1000);
@@ -236,6 +247,17 @@ function ClaudePanel() {
             <span style={{ flex: '0 0 auto' }}>⚠️</span>
             <span><b>Keep this Claude.ai tab open</b> until it finishes. The analysis runs inside your session, so closing the tab stops it. You can close this popup; the run keeps going and the icon turns green when it’s ready. Nothing is added to your Claude history, and your chats are never sent to our servers.</span>
           </div>
+          <button className="bb-btn bb-btn-secondary bb-btn-sm" style={{ width: '100%', marginTop: 12 }} onClick={stopClaude}>Stop</button>
+        </div>
+      )}
+
+      {mode === 'stopped' && (
+        <div>
+          <div style={{ fontWeight: 500, fontSize: 16, marginBottom: 2 }}>Run stopped</div>
+          <div style={{ fontSize: 13, color: t.g600, marginBottom: 14, lineHeight: 1.5 }}>
+            Nothing was saved and your Claude history is untouched.
+          </div>
+          <button className="bb-btn bb-btn-primary" style={{ width: '100%' }} onClick={begin}>Start again</button>
         </div>
       )}
 

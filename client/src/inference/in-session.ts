@@ -25,6 +25,16 @@ export function isRateLimitError(e: unknown): e is RateLimitError {
   return !!e && typeof e === 'object' && (e as { rateLimit?: boolean }).rateLimit === true;
 }
 
+// Raised when the user pressed Stop: the run must end quickly and quietly (no error state,
+// no retries). Carries a flag rather than relying on the AbortError name, which varies.
+export class CancelledError extends Error {
+  readonly cancelled = true;
+  constructor() { super('Run cancelled by the user.'); this.name = 'CancelledError'; }
+}
+export function isCancelledError(e: unknown): e is CancelledError {
+  return !!e && typeof e === 'object' && (e as { cancelled?: boolean }).cancelled === true;
+}
+
 // Claude.ai wraps the limit detail as a JSON string inside error.message. A window with
 // status "exceeded_limit" means a real cap (hours/days away), not a momentary throttle.
 function classifyLimit(bodyText: string): { exceeded: boolean; resetsAt: number | null; windowKey: string | null } {
@@ -75,6 +85,8 @@ export function extractTextFromSse(sse: string): string {
  */
 export class InSessionClaudeCaller implements ModelCaller {
   private scratchIds = new Set<string>();
+  private active = new Set<AbortController>();
+  private aborted = false;
 
   constructor(
     private orgId: string,
@@ -82,6 +94,12 @@ export class InSessionClaudeCaller implements ModelCaller {
     private fetchFn: FetchFn = (url, init) => fetch(url, init),
     private retryBaseMs = 5000,
   ) {}
+
+  /** Stop button: abort every in-flight call and refuse new ones. Scratch cleanup still runs. */
+  abortAll(): void {
+    this.aborted = true;
+    for (const c of [...this.active]) c.abort();
+  }
 
   async complete(prompt: string, opts?: { system?: string; model?: string; timeoutMs?: number }): Promise<string> {
     const model = opts?.model ?? this.model;
@@ -92,7 +110,14 @@ export class InSessionClaudeCaller implements ModelCaller {
     // those instead of degrading the calling lens to its floor. Non-retryable failures
     // throw immediately; parse-level problems are handled by the caller (the lens).
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      const r = await this.attemptOnce(prompt, model, timeoutMs);
+      if (this.aborted) throw new CancelledError();
+      let r: Awaited<ReturnType<InSessionClaudeCaller['attemptOnce']>>;
+      try {
+        r = await this.attemptOnce(prompt, model, timeoutMs);
+      } catch (e) {
+        if (this.aborted) throw new CancelledError(); // fetch abort surfaced as a rejection
+        throw e;
+      }
       if (r.ok) return r.text;
       lastStatus = r.status;
       if (r.status === 429) {
@@ -119,6 +144,7 @@ export class InSessionClaudeCaller implements ModelCaller {
     const convId = globalThis.crypto.randomUUID();
     this.scratchIds.add(convId);
     const ctrl = new AbortController();
+    this.active.add(ctrl);
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const createRes = await this.fetchFn(
@@ -145,6 +171,7 @@ export class InSessionClaudeCaller implements ModelCaller {
       return { ok: true, text: extractTextFromSse(await compRes.text()) };
     } finally {
       clearTimeout(timer);
+      this.active.delete(ctrl);
       await this.deleteConversation(convId);
       this.scratchIds.delete(convId);
     }

@@ -1,6 +1,6 @@
 import type { RawConversation } from '../src/capture/types';
 import { ClaudeCaptureAdapter } from '../src/capture/claude';
-import { InSessionClaudeCaller, isRateLimitError } from '../src/inference/in-session';
+import { InSessionClaudeCaller, isRateLimitError, isCancelledError, CancelledError } from '../src/inference/in-session';
 import { buildProfile, isEmptyProfile } from '../src/engine/profile';
 import { loadPool, savePool, mergePool, evictedConversations, type PoolUnit } from '../src/engine/evidence-pool';
 import { loadScanSet, saveScanSet, partitionScanned, nextScanSet } from '../src/store/scanset';
@@ -20,13 +20,24 @@ export default defineContentScript({
     (window as unknown as { __aibadgesLoaded?: boolean }).__aibadgesLoaded = true;
 
     let running = false;
+    let cancelled = false;
+    let activeCaller: InSessionClaudeCaller | null = null;
     const notify = (m: Record<string, unknown>) => { try { chrome.runtime.sendMessage(m); } catch {} };
 
     chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (sender.id !== chrome.runtime.id) return;
       if (msg?.type === 'aibadges:alive') { sendResponse({ running }); return false; }
+      if (msg?.type === 'aibadges:cancel') {
+        // Stop button: abort the in-flight call and let the run wind down through its normal
+        // cleanup (scratch conversations are deleted in the caller's finally blocks).
+        cancelled = true;
+        activeCaller?.abortAll();
+        sendResponse({ ok: true, running });
+        return false;
+      }
       if (msg?.type !== 'aibadges:run') return;
       if (running) { sendResponse({ ok: false, error: 'already running' }); return false; }
+      cancelled = false;
 
       running = true;
       sendResponse({ ok: true, started: true }); // ack immediately; run continues in the background
@@ -53,6 +64,7 @@ export default defineContentScript({
         // extraction, the best for synthesis. Never assume a tier.
         const { fast, best } = pickModels(conversations.map((c) => c.model));
         const caller = new InSessionClaudeCaller(org, best ?? conversations[0]?.model ?? null);
+        activeCaller = caller;
 
         // Incremental extraction: fetch + extract only conversations that are new or changed since
         // their last scan; everything else is already represented in the evidence pool. An empty
@@ -64,6 +76,7 @@ export default defineContentScript({
         const convos: RawConversation[] = [];
         notify({ type: 'aibadges:phase', phase: 'capture', done: 0, total: toScan.length });
         for (let i = 0; i < toScan.length; i++) {
+          if (cancelled) throw new CancelledError(); // capture happens before any caller call
           convos.push(await adapter.fetchConversation(toScan[i].id));
           notify({ type: 'aibadges:phase', phase: 'capture', done: i + 1, total: toScan.length });
         }
@@ -120,10 +133,15 @@ export default defineContentScript({
           } catch (e) { console.warn('[aibadges] sync failed (non-fatal)', e); synced = `error: ${String(e)}`; }
           console.log('[aibadges] done', { version, capturedChars, fast, best, thinking: profile.thinking.length, type: profile.type?.code ?? null, shifts: profile.trajectory.shifts.length, synced });
           return version;
-        } finally { await caller.dispose(); }
+        } finally { activeCaller = null; await caller.dispose(); }
       })()
         .then((version) => notify({ type: 'aibadges:done', version }))
         .catch((e) => {
+          if (cancelled || isCancelledError(e)) {
+            console.log('[aibadges] run cancelled by the user');
+            notify({ type: 'aibadges:cancelled' });
+            return;
+          }
           console.error('[aibadges] run failed', e);
           let msg = String(e);
           if (isRateLimitError(e)) {

@@ -158,3 +158,23 @@ describe('InSessionClaudeCaller', () => {
     expect(deleted).toBe(true);
   });
 });
+
+describe('abortAll (the Stop button)', () => {
+  it('aborts an in-flight completion and refuses further calls with CancelledError', async () => {
+    const { InSessionClaudeCaller, isCancelledError } = await import('../../src/inference/in-session');
+    // fetch that resolves conversation-create instantly, then hangs on the completion until aborted
+    const fetchFn = (url: string, init?: RequestInit) => {
+      if (url.endsWith('/chat_conversations')) return Promise.resolve(new Response('{}', { status: 200 }));
+      if (init?.method === 'DELETE') return Promise.resolve(new Response('{}', { status: 200 }));
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+      });
+    };
+    const caller = new InSessionClaudeCaller('org', null, fetchFn as any, 1);
+    const inflight = caller.complete('prompt');
+    await new Promise((r) => setTimeout(r, 20)); // let it reach the hanging completion fetch
+    caller.abortAll();
+    await expect(inflight).rejects.toSatisfy(isCancelledError);
+    await expect(caller.complete('another')).rejects.toSatisfy(isCancelledError);
+  });
+});

@@ -272,6 +272,10 @@ export default defineBackground(() => {
         disarm(); chrome.storage.local.set({ [CLAUDE_STATUS]: 'done', [CLAUDE_PROGRESS]: null }); done(); break;
       case 'aibadges:error':
         disarm(); chrome.storage.local.set({ [CLAUDE_STATUS]: 'error', [CLAUDE_ERROR]: String(msg.error ?? '') }); error(); break;
+      case 'aibadges:cancelled':
+        // User pressed Stop on the Claude run: no error state, back to rest. The 'cancelled'
+        // status keeps the popup from auto-starting a run the user just stopped.
+        disarm(); chrome.storage.local.set({ [CLAUDE_STATUS]: 'cancelled', [CLAUDE_PROGRESS]: null }); idle(); break;
       case 'aibadges:opened':
         // Profile was opened — the "fresh" green dot has served its purpose; return to rest.
         idle(); break;
