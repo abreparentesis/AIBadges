@@ -15,7 +15,15 @@ describe('loadScanSet / saveScanSet', () => {
     expect(await loadScanSet(kv, 'claude')).toEqual({ 'uuid-A': '2026-01-01T00:00:00Z' });
     expect(await loadScanSet(kv, 'chatgpt')).toEqual({}); // provider-scoped
     expect(await loadScanSet(memKv({ [scanKey('claude')]: 'not json' }), 'claude')).toEqual({});
-    expect(await loadScanSet(memKv({ [scanKey('claude')]: JSON.stringify({ a: 1, b: 'ok' }) }), 'claude')).toEqual({ b: 'ok' });
+    expect(await loadScanSet(memKv({ [scanKey('claude')]: JSON.stringify({ a: 1, b: 'ok' }) }), 'claude')).toEqual({});
+  });
+
+  it('discards a scan set written by an older extractor version (forces a full rescan)', async () => {
+    const stale = memKv({ [scanKey('claude')]: JSON.stringify({ v: 1, entries: { 'uuid-A': 't1' } }) });
+    expect(await loadScanSet(stale, 'claude')).toEqual({});
+    // legacy unversioned flat shape is also discarded
+    const flat = memKv({ [scanKey('claude')]: JSON.stringify({ 'uuid-A': 't1' }) });
+    expect(await loadScanSet(flat, 'claude')).toEqual({});
   });
 });
 

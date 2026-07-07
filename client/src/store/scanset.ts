@@ -12,20 +12,31 @@ export type ScanSet = Record<string, string>; // conversationId -> updatedAt fin
 
 export const scanKey = (provider: Provider): string => `aibadges:scanned:${provider}`;
 
+/**
+ * Bump a provider's version whenever its EXTRACTOR improves (model upgrade, new sweep prompt):
+ * a "scanned" verdict from a weaker extractor must not exempt a conversation from the better one,
+ * or old blind spots would be permanent. A version mismatch discards the scan set (full rescan);
+ * the evidence pool is kept — re-extracted quotes dedupe into it, longer variants winning.
+ *   claude 2: extraction moved from Haiku to Sonnet-or-better.
+ */
+export const SCANNER_VERSION: Record<Provider, number> = { claude: 2, chatgpt: 1 };
+
 export async function loadScanSet(kv: KV, provider: Provider): Promise<ScanSet> {
   try {
     const raw = await kv.get(scanKey(provider));
     if (!raw) return {};
     const obj = JSON.parse(raw);
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return {};
+    const wrapped = obj as { v?: number; entries?: Record<string, unknown> };
+    if (wrapped.v !== SCANNER_VERSION[provider] || !wrapped.entries || typeof wrapped.entries !== 'object') return {};
     const out: ScanSet = {};
-    for (const [id, fp] of Object.entries(obj)) if (typeof fp === 'string') out[id] = fp;
+    for (const [id, fp] of Object.entries(wrapped.entries)) if (typeof fp === 'string') out[id] = fp;
     return out;
   } catch { return {}; }
 }
 
 export async function saveScanSet(kv: KV, provider: Provider, set: ScanSet): Promise<void> {
-  await kv.set(scanKey(provider), JSON.stringify(set));
+  await kv.set(scanKey(provider), JSON.stringify({ v: SCANNER_VERSION[provider], entries: set }));
 }
 
 /** Split a selection into conversations that need (re)scanning vs ones the pool already represents. */
