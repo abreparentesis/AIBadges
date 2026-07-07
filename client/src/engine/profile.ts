@@ -25,6 +25,18 @@ export interface BuildProfileOpts {
   fluencyOnly?: boolean;
 }
 
+// A run must never overwrite a good profile with a contentless one, and must fail LOUDLY when
+// it produced nothing. What counts as "nothing" depends on the product mode: fluency-only means
+// no capability (the personality fields are empty by design there — checking them caused every
+// run to be discarded as empty after the fluency-only pivot); legacy means no content anywhere.
+export function isEmptyProfile(
+  p: Pick<Profile, 'thinking' | 'trajectory' | 'type' | 'capability'>,
+  fluencyOnly = FLUENCY_ONLY,
+): boolean {
+  if (fluencyOnly) return !p.capability;
+  return p.thinking.length === 0 && p.trajectory.shifts.length === 0 && !p.type && !p.capability;
+}
+
 export async function buildProfile(convos: RawConversation[], caller: ModelCaller, opts: BuildProfileOpts): Promise<Profile> {
   const evidence = await extractEvidence(convos, caller, {
     maxChars: opts.maxChars, maxChunks: opts.maxChunks, perConvoChars: opts.perConvoChars,

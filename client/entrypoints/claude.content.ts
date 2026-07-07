@@ -1,7 +1,7 @@
 import type { RawConversation } from '../src/capture/types';
 import { ClaudeCaptureAdapter } from '../src/capture/claude';
 import { InSessionClaudeCaller, isRateLimitError } from '../src/inference/in-session';
-import { buildProfile } from '../src/engine/profile';
+import { buildProfile, isEmptyProfile } from '../src/engine/profile';
 import { distill } from '../src/engine/distill';
 import { ProfileStore } from '../src/store/local';
 import { chromeKv } from '../src/store/chrome-kv';
@@ -72,11 +72,12 @@ export default defineContentScript({
             onPhase: (p) => notify({ type: 'aibadges:phase', ...p }),
             onSynthesisDebug: (d) => { void chromeKv.set('aibadges:debug:synthesis', JSON.stringify(d)); },
           });
-          // Don't overwrite an existing good profile with an empty one (e.g. the model
-          // returned nothing usable). Treat a fully-empty result as a soft failure.
-          const empty = profile.thinking.length === 0 && profile.trajectory.shifts.length === 0
-            && !profile.type;
-          if (empty) throw new Error('The analysis returned nothing this run. Your existing profile, if any, was kept.');
+          // Don't overwrite an existing good profile with an empty one. In fluency-only mode
+          // "empty" means the capability lens failed (see isEmptyProfile) — the console above
+          // carries the [aibadges] capability warn with the underlying cause.
+          if (isEmptyProfile(profile)) {
+            throw new Error('The analysis produced no fluency result this run (usually a transient Claude error — try again in a minute). Your existing profile, if any, was kept.');
+          }
           await store.saveProfileVersion(profile);
           await chromeKv.set('aibadges:signals', JSON.stringify(distill(profile, now)));
           let synced: number | string;

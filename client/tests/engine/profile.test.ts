@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildProfile } from '../../src/engine/profile';
+import { buildProfile, isEmptyProfile } from '../../src/engine/profile';
 import { ProfileSchema } from '../../src/engine/types';
 import { transcripts } from '../fixtures/transcripts';
 import { evidenceResponse, synthesisResponse } from '../fixtures/model-responses';
@@ -91,5 +91,34 @@ describe('buildProfile', () => {
     // Stored evidence resolves every referenced id and only those.
     const storedIds = p.evidence!.map((e) => e.id).sort();
     expect(storedIds).toEqual(['e1', 'e2', 'e3']);
+  });
+});
+
+describe('isEmptyProfile (the guard that discards a contentless run)', () => {
+  const emptyTraj = { window: { earlyTo: '', recentFrom: '' }, shifts: [] };
+  const cap = {
+    aiFluency: {
+      delegation: { band: 'proficient' as const, evidenceIds: [] }, description: { band: 'proficient' as const, evidenceIds: [] },
+      discernment: { band: 'developing' as const, evidenceIds: [] }, diligence: { band: 'developing' as const, evidenceIds: [] },
+    },
+    yeggeStage: { stage: 3, evidenceIds: [] }, domains: [],
+  };
+
+  it('REGRESSION: a fluency-only profile with a capability is NOT empty despite blank personality fields', () => {
+    // The pre-fix guard checked only thinking/trajectory/type — empty by design under
+    // FLUENCY_ONLY — so every successful run was thrown away as "returned nothing".
+    expect(isEmptyProfile({ thinking: [], trajectory: emptyTraj, type: undefined, capability: cap }, true)).toBe(false);
+  });
+
+  it('fluency-only: a missing capability IS empty, even when personality content exists', () => {
+    const thinking = [{ claim: 'c', evidenceIds: ['e1'], confidence: 'low' as const }];
+    expect(isEmptyProfile({ thinking, trajectory: emptyTraj, type: undefined, capability: undefined }, true)).toBe(true);
+  });
+
+  it('legacy mode: empty only when nothing at all survived', () => {
+    expect(isEmptyProfile({ thinking: [], trajectory: emptyTraj, type: undefined, capability: undefined }, false)).toBe(true);
+    expect(isEmptyProfile({ thinking: [], trajectory: emptyTraj, type: undefined, capability: cap }, false)).toBe(false);
+    const thinking = [{ claim: 'c', evidenceIds: ['e1'], confidence: 'low' as const }];
+    expect(isEmptyProfile({ thinking, trajectory: emptyTraj, type: undefined, capability: undefined }, false)).toBe(false);
   });
 });
