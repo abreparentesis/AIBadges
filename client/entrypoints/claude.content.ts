@@ -42,7 +42,9 @@ export default defineContentScript({
         const store = new ProfileStore(chromeKv, 'claude');
         // Sample across the WHOLE history (oldest->newest), not just the most recent, so the
         // trajectory lens sees real span. The char budget below is sized to cover all of these.
-        const conversations = selectAcrossTimeline(await adapter.listConversations(), 40);
+        // 90 matches the ChatGPT path's window (cross-provider comparability); the tighter
+        // per-conversation budget below keeps the total inside the same 6-chunk cap.
+        const conversations = selectAcrossTimeline(await adapter.listConversations(), 90);
 
         // Choose models from what this account actually has: a fast model for bulk evidence
         // extraction, the best for synthesis. Never assume a tier.
@@ -65,10 +67,11 @@ export default defineContentScript({
             version, now,
             modelProvenance: `claude-in-session (${fast ?? '?'} + ${best ?? '?'})`,
             fastModel: fast ?? undefined, bestModel: best ?? undefined,
-            // Budget sized to cover all ~40 time-spread conversations (vs the old recent-only
-            // ~96k slice): 6 chunks x 48k = ~288k chars across ~5 evidence calls + 1 synthesis.
-            // Still far under the old ~13-call shape, so it stays within the in-session usage cap.
-            maxChars: 48000, maxChunks: 6, perConvoChars: 6000, concurrency: 2,
+            // Budget sized for ~90 time-spread conversations at the calibration-validated
+            // 2500 chars each (~225k total): still 6 chunks x 48k, and the scratch-conversation
+            // caller is API-parallel, so 3-wide extraction keeps wall-clock roughly flat vs
+            // the old 40-conversation run while more than doubling the window.
+            maxChars: 48000, maxChunks: 6, perConvoChars: 2500, concurrency: 3,
             onPhase: (p) => notify({ type: 'aibadges:phase', ...p }),
             onSynthesisDebug: (d) => { void chromeKv.set('aibadges:debug:synthesis', JSON.stringify(d)); },
           });
