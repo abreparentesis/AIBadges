@@ -13,6 +13,7 @@ import { carryOverSharing } from '../src/sync/signal-state';
 import { BACKEND_URL, INVITE_TOKEN } from '../src/config';
 import { pickModels } from '../src/engine/models';
 import { selectAcrossTimeline } from '../src/capture/select';
+import { maybeMountReveal } from '../src/ui/reveal';
 
 export default defineContentScript({
   matches: ['https://claude.ai/*'],
@@ -171,5 +172,11 @@ export default defineContentScript({
 
       return false;
     });
+
+    // Self-reveal for users who installed but never ran a profile: a small dismissible pill on
+    // claude.ai itself (an unpinned toolbar icon is invisible; this page is where the product
+    // works). Start goes through the background so it uses the exact same path as the popup.
+    void maybeMountReveal('claude', () =>
+      chrome.runtime.sendMessage({ type: 'aibadges:reveal-start' }, () => void chrome.runtime.lastError));
   },
 });

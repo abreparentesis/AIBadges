@@ -3,6 +3,7 @@ import { selectAcrossTimeline } from '../src/capture/select';
 import { buildChatGptExport } from '../src/capture/chatgpt-export';
 import { runBridge } from '../src/capture/chatgpt-bridge';
 import { runAutoProfile, runExtractionBatch } from '../src/capture/chatgpt-autorun';
+import { maybeMountReveal } from '../src/ui/reveal';
 import type { RawConversation } from '../src/capture/types';
 
 // ChatGPT path on chatgpt.com. Default flow is INVISIBLE: the service worker opens this page in a
@@ -96,6 +97,11 @@ export default defineContentScript({
           notify({ type: 'aibadges:cg-autorun-error', error: String(e?.message ?? e) });
         })
         .finally(() => { running = false; });
+    } else {
+      // A NORMAL chatgpt.com visit (not one of our spawned run tabs): self-reveal for users who
+      // installed but never ran a profile. Starting uses the same invisible autorun as the popup.
+      void maybeMountReveal('chatgpt', () =>
+        chrome.runtime.sendMessage({ type: 'aibadges:cg-autorun' }, () => void chrome.runtime.lastError));
     }
   },
 });

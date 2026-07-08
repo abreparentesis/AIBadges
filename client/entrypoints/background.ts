@@ -286,6 +286,11 @@ export default defineBackground(() => {
       case 'aibadges:opened':
         // Profile was opened — the "fresh" green dot has served its purpose; return to rest.
         idle(); break;
+      case 'aibadges:reveal-start':
+        // The in-page pill on claude.ai: start the run in the tab that asked, exactly as the
+        // popup would (the ChatGPT pill sends 'aibadges:cg-autorun' directly instead).
+        if (sender.tab?.id != null) chrome.tabs.sendMessage(sender.tab.id, { type: 'aibadges:run' }, () => void chrome.runtime.lastError);
+        break;
       case 'aibadges:open-results':
         // The in-ChatGPT bridge finished on the chatgpt.com tab (a content script can't open tabs),
         // so it asks the background to surface the freshly built profile.
