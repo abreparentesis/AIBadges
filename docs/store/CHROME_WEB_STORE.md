@@ -53,23 +53,23 @@ Certify all three usage statements: data is not sold, not used for purposes unre
 
 Short description (under 132 characters):
 
-> Measure how skillfully you work with AI from your own chat history — an evidence-backed fluency score. Your chats stay yours.
+> Measure how skillfully you work with AI from your own chat history: an evidence-backed fluency score. Your chats stay yours.
 
 Detailed description:
 
-> AI Fluency Index reads your own conversation history on claude.ai or chatgpt.com and asks your own AI to assess it. The result is an evidence-backed measure of how skillfully you work with AI: four fluency dimensions — Delegation, Description, Discernment, and Diligence — each banded from the exact quotes that earn it, rolled up into a 1-100 score and a level from Beginner to Expert. Every dimension comes with a concrete, personal "try next" action, and every claim links to the verbatim quotes behind it.
+> AI Fluency Index reads your conversation history on claude.ai or chatgpt.com and asks your own AI to assess it. You get four fluency scores: Delegation, Description, Discernment, and Diligence. In plain terms: what you hand off, how clearly you ask, whether you push back on weak answers, and whether you check what the AI tells you. Each band has to be earned by exact quotes from your own chats, and the four roll up into a 1-100 score and a level from Beginner to Expert. You also get one concrete thing to try next per dimension, based on how you actually use AI, not generic advice.
 >
-> The scoring is deliberately skeptical: an adversarial audit pass re-judges every quote and lowers any band its evidence does not earn, and thin histories are labeled provisional rather than scored confidently.
+> The scoring is skeptical on purpose. An adversarial audit re-judges every quote and lowers any band its evidence does not earn. If your history is thin, the result says provisional instead of pretending to be sure.
 >
-> The privacy model is the point. The analysis runs inside your own logged-in AI session, so the only party that ever processes your raw chats is the provider that already holds them. The full result, quotes included, is stored on your device, where you can audit every claim against its evidence. If you sync or share, only the distilled badge (score, level, bands) crosses the network. Our servers never see a single message of your chats.
+> The privacy model is the point. The analysis runs inside your own logged-in AI session, so the only party that ever processes your raw chats is the provider that already holds them. The full result, quotes included, stays on your device, where you can check every claim against the words that earned it. If you share, only the badge itself (score, level, bands) crosses the network. Our servers never see a single message of your chats.
 >
-> Your badge is private by default. Make it public and you get a share page you control — one per provider, since your Claude and ChatGPT fluency are measured separately. Flip it back to private any time.
+> Your badge is private by default. Make it public and you get a share page you control, one per provider, since your Claude and ChatGPT fluency are measured separately. Flip it back to private any time.
 >
 > How it works:
 > 1. Open the popup on claude.ai or chatgpt.com and start a run.
-> 2. Your own AI analyzes your history in your session; re-runs only look at conversations that changed.
-> 3. Review the result locally, with every band linked to its quotes.
-> 4. Share the badge if you want; everything else stays on your device.
+> 2. Your own AI analyzes your history in your session. Re-runs only look at conversations that changed.
+> 3. Review the result on your device, every band linked to its quotes.
+> 4. Share the badge if you want. Everything else stays local.
 
 Category: Productivity (Tools also fits; Productivity gets more traffic).
 
