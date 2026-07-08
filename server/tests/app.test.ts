@@ -482,3 +482,64 @@ describe('share page og:image tags', () => {
     expect(html).toContain('name="twitter:card" content="summary_large_image"');
   });
 });
+
+// ---- production hardening ----
+describe('hardening', () => {
+  function makeLimitedApp() {
+    const db = new Database(':memory:');
+    db.exec('PRAGMA foreign_keys = ON;');
+    migrate(db);
+    return createApp(db, { inviteToken: '', writeMaxPerWindow: 3, publicMaxPerMinute: 3 });
+  }
+
+  it('rate-limits profile writes per key and keeps other keys unaffected', async () => {
+    const app = makeLimitedApp();
+    for (let i = 0; i < 3; i++) {
+      const res = await call(app, 'POST', '/v1/profile', { key: 'busy', body: sampleProfile });
+      expect(res.status).toBe(201);
+    }
+    const blocked = await call(app, 'POST', '/v1/profile', { key: 'busy', body: sampleProfile });
+    expect(blocked.status).toBe(429);
+    const other = await call(app, 'POST', '/v1/profile', { key: 'calm', body: sampleProfile });
+    expect(other.status).toBe(201);
+  });
+
+  it('rate-limits the public share page per client', async () => {
+    const app = makeLimitedApp();
+    for (let i = 0; i < 3; i++) await app.request('/s/nope');
+    const blocked = await app.request('/s/nope');
+    expect(blocked.status).toBe(429);
+  });
+
+  it('rejects oversized request bodies with 413', async () => {
+    const app = makeLimitedApp();
+    const huge = { ...sampleProfile, modelProvenance: 'x'.repeat(300 * 1024) };
+    const res = await call(app, 'POST', '/v1/profile', { key: 'big', body: huge });
+    expect(res.status).toBe(413);
+  });
+
+  it('serves the share page with CSP, nosniff, and no-referrer headers', async () => {
+    const app = makeOpenApp();
+    const res = await call(app, 'POST', '/v1/signals', { key: 'khdr', body: [{
+      type: 'statBadge', disclosure: 'public',
+      surfacedContent: { fluencyScore: 55, level: 'Intermediate', yeggeStage: 4, aiFluency: {} },
+    }] });
+    const token = ((await res.json()).signals as Array<{ shareToken: string }>)[0].shareToken;
+    const page = await app.request(`/s/${token}`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(page.headers.get('referrer-policy')).toBe('no-referrer');
+    const csp = page.headers.get('content-security-policy') ?? '';
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain('fonts.googleapis.com'); // the page really does load Besley from there
+    expect(csp).toContain("img-src 'self' data:"); // the og image is same-origin
+  });
+
+  it('health endpoint stays unthrottled and unauthenticated', async () => {
+    const app = makeLimitedApp();
+    for (let i = 0; i < 10; i++) {
+      const res = await app.request('/health');
+      expect(res.status).toBe(200);
+    }
+  });
+});

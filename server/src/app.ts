@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { bodyLimit } from 'hono/body-limit';
 import type { Database } from 'bun:sqlite';
 import { ProfileSchema, SignalInputSchema } from './types';
+import { rateLimiter, securityHeaders } from './hardening';
 import { renderBadgeSvg, svgToPng, loadFallbackPng, type StatBadgeContent } from './og';
 
 const PROVENANCE_LABEL = 'Self-computed in your own AI session. Not verified by us.';
@@ -202,7 +204,13 @@ ${certificate}
 </body></html>`;
 }
 
-export function createApp(db: Database, opts: { inviteToken: string; ogRender?: (content: StatBadgeContent) => Buffer }) {
+export function createApp(db: Database, opts: {
+  inviteToken: string;
+  ogRender?: (content: StatBadgeContent) => Buffer;
+  /** Test hooks: shrink the rate-limit budgets so limits are exercised without 30+ requests. */
+  writeMaxPerWindow?: number;
+  publicMaxPerMinute?: number;
+}) {
   const app = new Hono();
 
   // Register a brand-new user key if needed, returning whether the request may proceed.
@@ -223,6 +231,24 @@ export function createApp(db: Database, opts: { inviteToken: string; ogRender?: 
     allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
     maxAge: 86400,
   }));
+
+  // ---- production hardening ----
+  app.use('*', securityHeaders);
+  // A full profile push (badge content + banded dimensions, evidence already stripped
+  // client-side) is a few KB; 256KB leaves an order-of-magnitude headroom without letting
+  // anyone park megabytes in SQLite.
+  app.use('/v1/*', bodyLimit({
+    maxSize: 256 * 1024,
+    onError: (c) => c.json({ error: 'request body too large' }, 413),
+  }));
+  // Writes: a normal run performs 1-3 writes, so 30 per 5 minutes per key is generous for
+  // humans and hostile to loops. Public pages: the OG image renders a PNG per request
+  // (CPU-bound), so cap per-IP bursts.
+  const writeLimit = rateLimiter({ windowMs: 5 * 60_000, max: opts.writeMaxPerWindow ?? 30 });
+  app.use('/v1/profile', writeLimit);
+  app.use('/v1/signals', writeLimit);
+  app.use('/s/*', rateLimiter({ windowMs: 60_000, max: opts.publicMaxPerMinute ?? 120 }));
+  app.use('/og/*', rateLimiter({ windowMs: 60_000, max: opts.publicMaxPerMinute ?? 120 }));
 
   app.get('/health', (c) => c.json({ ok: true }));
 
