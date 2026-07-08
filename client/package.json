@@ -1,12 +1,13 @@
 {
   "name": "client",
   "version": "1.0.0",
-  "description": "AIBadges browser extension — capture, in-session inference, and the profile/report UI.",
+  "description": "AIBadges browser extension \u2014 capture, in-session inference, and the profile/report UI.",
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "zip": "wxt zip"
   },
   "keywords": [],
   "author": "",
