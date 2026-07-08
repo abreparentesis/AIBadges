@@ -163,7 +163,14 @@ export default defineBackground(() => {
     // the worker (or a stale flag from a dead run) gets re-checked within one watchdog interval.
     if (seed['aibadges:cg:running']) armCg();
   };
-  chrome.runtime.onInstalled.addListener(idle);
+  chrome.runtime.onInstalled.addListener((details) => {
+    idle();
+    // FRESH installs only (not updates/reloads): Chrome buries new extensions behind the puzzle
+    // menu, so a one-time welcome tab walks the user through pinning and starting a first run.
+    if (details.reason === 'install') {
+      chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') });
+    }
+  });
   chrome.runtime.onStartup?.addListener(() => void restore());
   void restore();
 

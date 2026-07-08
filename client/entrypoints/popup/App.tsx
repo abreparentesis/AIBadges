@@ -50,6 +50,7 @@ async function latestVersionOf(provider: Provider): Promise<number> {
 export default function App() {
   const [provider, setProvider] = useState<Provider | null>(null);
   const [override, setOverride] = useState<Provider | null>(null);
+  const [unpinned, setUnpinned] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -59,6 +60,8 @@ export default function App() {
       const url = await activeUrl();
       if (url.startsWith('https://chatgpt.com/') || url.startsWith('https://chat.openai.com/')) setProvider('chatgpt');
       else setProvider('claude');
+      // Someone reading this popup from the puzzle menu will lose the icon again — nudge once per open.
+      try { setUnpinned(!(await chrome.action.getUserSettings()).isOnToolbar); } catch { /* old Chrome */ }
     })();
   }, []);
 
@@ -72,6 +75,11 @@ export default function App() {
       </div>
       {active == null ? <div style={{ fontSize: 13, color: t.g500 }}>Loading…</div>
         : active === 'chatgpt' ? <ChatGptPanel /> : <ClaudePanel />}
+      {unpinned && (
+        <div style={{ marginTop: 14, fontSize: 12, color: t.g500, background: t.g100, borderRadius: 8, padding: '7px 10px', lineHeight: 1.5 }}>
+          Tip: pin this extension (puzzle piece → 📌) so your score stays one click away.
+        </div>
+      )}
     </div>
   );
 }
