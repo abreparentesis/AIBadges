@@ -3,6 +3,7 @@ import '../../src/ui/theme.css';
 import { t } from '../../src/ui/tokens';
 import { chromeKv } from '../../src/store/chrome-kv';
 import { migrateLegacySlots, runKey } from '../../src/store/provider';
+import { buildDiagnosticReport } from '../../src/debug/dlog';
 
 type Provider = 'claude' | 'chatgpt';
 type Mode = 'init' | 'starting' | 'running' | 'done' | 'error' | 'needclaude' | 'stopped';
@@ -80,7 +81,28 @@ export default function App() {
           Tip: pin this extension (puzzle piece → 📌) so your score stays one click away.
         </div>
       )}
+      <DiagnosticLink />
     </div>
+  );
+}
+
+// Beta support without telemetry: a local, chat-free event log the user copies and sends by hand.
+function DiagnosticLink() {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(await buildDiagnosticReport());
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+        } catch { /* clipboard denied: nothing to do */ }
+      }}
+      style={{ display: 'block', margin: '12px auto 0', border: 'none', background: 'none', cursor: 'pointer',
+        fontFamily: 'inherit', fontSize: 11.5, color: copied ? '#12b76a' : t.g500, textDecoration: copied ? 'none' : 'underline' }}>
+      {copied ? 'Copied — paste it in a message to us' : 'Having trouble? Copy diagnostic report'}
+    </button>
   );
 }
 

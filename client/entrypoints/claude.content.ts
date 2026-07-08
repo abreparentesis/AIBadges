@@ -14,12 +14,14 @@ import { BACKEND_URL, INVITE_TOKEN } from '../src/config';
 import { pickModels } from '../src/engine/models';
 import { selectAcrossTimeline } from '../src/capture/select';
 import { maybeMountReveal } from '../src/ui/reveal';
+import { captureGlobalErrors } from '../src/debug/dlog';
 
 export default defineContentScript({
   matches: ['https://claude.ai/*'],
   async main() {
     if ((window as unknown as { __aibadgesLoaded?: boolean }).__aibadgesLoaded) return;
     (window as unknown as { __aibadgesLoaded?: boolean }).__aibadgesLoaded = true;
+    captureGlobalErrors('cs-claude');
 
     let running = false;
     let cancelled = false;

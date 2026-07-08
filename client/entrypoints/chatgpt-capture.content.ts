@@ -4,6 +4,7 @@ import { buildChatGptExport } from '../src/capture/chatgpt-export';
 import { runBridge } from '../src/capture/chatgpt-bridge';
 import { runAutoProfile, runExtractionBatch } from '../src/capture/chatgpt-autorun';
 import { maybeMountReveal } from '../src/ui/reveal';
+import { captureGlobalErrors } from '../src/debug/dlog';
 import type { RawConversation } from '../src/capture/types';
 
 // ChatGPT path on chatgpt.com. Default flow is INVISIBLE: the service worker opens this page in a
@@ -24,6 +25,7 @@ export default defineContentScript({
   async main() {
     if ((window as unknown as { __aibadgesCgLoaded?: boolean }).__aibadgesCgLoaded) return;
     (window as unknown as { __aibadgesCgLoaded?: boolean }).__aibadgesCgLoaded = true;
+    captureGlobalErrors('cs-chatgpt');
 
     let running = false;
     const notify = (m: Record<string, unknown>) => { try { chrome.runtime.sendMessage(m); } catch { /* popup may be closed */ } };

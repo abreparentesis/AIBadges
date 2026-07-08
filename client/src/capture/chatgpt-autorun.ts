@@ -5,6 +5,7 @@ import { buildExtractionPrompt, buildExtractionSecondSweep, buildSynthesisFromEv
 import { setComposer, clickSend, hasChallenge } from './chatgpt-bridge';
 import { importGptReply, CAPTURE_KEY } from '../run/import-chatgpt';
 import { dedupeMoments, sameMoment, loadPool, savePool, mergePool, evictedConversations, type PoolUnit } from '../engine/evidence-pool';
+import { dlog } from '../debug/dlog';
 import { loadScanSet, saveScanSet, partitionScanned, nextScanSet } from '../store/scanset';
 import { chromeKv } from '../store/chrome-kv';
 import { CG_BATCH_OUT_PREFIX, CG_BATCH_CONVO_PREFIX, batchOutKey, batchConvoKey } from './cg-keys';
@@ -471,10 +472,14 @@ export async function runExtractionBatch(batch: number, notify: Notify): Promise
     try {
       const sweep = await runTurnIn(ctx, buildExtractionSecondSweep(), EXTRACT_TIMEOUT_MS, notify);
       units = dedupeMoments([...units, ...parseEvidence(sweep.text)], (u) => u.conversationId);
-    } catch (e) { console.warn('[aibadges] second extraction sweep failed (kept first pass)', batch, e); }
+    } catch (e) {
+      console.warn('[aibadges] second extraction sweep failed (kept first pass)', batch, e);
+      dlog('cg-worker', 'second-sweep-failed', { batch, err: String((e as Error)?.message ?? e) });
+    }
     await write({ units });
   } catch (e) {
     console.error('[aibadges] chatgpt extraction batch failed', batch, e);
+    dlog('cg-worker', 'batch-failed', { batch, err: String((e as Error)?.message ?? e) });
     await write({ failed: true });
   } finally {
     if (ctx.id && ctx.token) await deleteConversation(ctx.id, ctx.token);
@@ -591,6 +596,10 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   //    failed audit degrades to importing the synthesis draft (combineForImport tolerates it).
   const batches = chunk(allConvos, BATCH_SIZE);
   const plan = planRun(ckptRaw, batches.length, Date.now());
+  dlog('cg', 'plan', {
+    resume: plan.resume, batches: batches.length, doneAlready: plan.doneBatches.length,
+    skippedAlready: plan.skippedBatches.length, hasSynth: !!plan.synthText, convos: allConvos.length,
+  });
   const totalSteps = batches.length + 2;
   const doneBatches: number[] = [...plan.doneBatches];
   const skippedBatches: number[] = [...plan.skippedBatches];
@@ -646,7 +655,8 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
     if (!synthText) {
       try {
         synthText = (await runTurn(buildSynthesisFromEvidence(allPooled), REDUCE_TIMEOUT_MS)).text;
-      } catch {
+      } catch (e) {
+        dlog('cg', 'synthesis-interrupted', { err: String((e as Error)?.message ?? e), pooled: allPooled.length });
         await saveCkpt(ckpt()); // evidence pool is safe; next run resumes at synthesis
         throw new Error('The analysis was interrupted during synthesis. Run again to continue from where it stopped.');
       }
@@ -662,7 +672,10 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
         await runTurn(buildSynthesisFromEvidence(allPooled), REDUCE_TIMEOUT_MS);
       }
       auditText = (await runTurn(buildAuditPrompt(), REDUCE_TIMEOUT_MS)).text;
-    } catch { /* audit failed twice — import the synthesis draft instead of losing the run */ }
+    } catch (e) {
+      // audit failed twice — import the synthesis draft instead of losing the run
+      dlog('cg', 'audit-failed-kept-draft', { err: String((e as Error)?.message ?? e) });
+    }
     notify({ type: 'aibadges:cg-phase', phase: 'analysis', done: ++done, total: totalSteps });
 
     // 3. Delete the throwaway BEFORE signaling done (the done message closes this tab, which would

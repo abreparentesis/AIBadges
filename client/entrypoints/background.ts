@@ -1,5 +1,6 @@
 import { CG_WORKERS_KEY, batchOutKey } from '../src/capture/cg-keys';
 import { runKey, PROVIDERS } from '../src/store/provider';
+import { dlog, captureGlobalErrors } from '../src/debug/dlog';
 
 // Run-lifecycle keys are namespaced per provider (aibadges:status:claude vs :chatgpt etc.) so the
 // two flows can never bleed state into each other. The Claude flow owns the :claude keys; the
@@ -37,6 +38,7 @@ export default defineBackground(() => {
   const arm = () => chrome.alarms.create(WATCHDOG, { when: Date.now() + WATCHDOG_MS });
   const disarm = () => chrome.alarms.clear(WATCHDOG);
   const failRun = (reason: string) => {
+    dlog('bg', 'watchdog-fail-claude', { err: reason });
     chrome.storage.local.set({ [CLAUDE_STATUS]: 'error', [CLAUDE_ERROR]: reason });
     error();
   };
@@ -119,6 +121,7 @@ export default defineBackground(() => {
   };
   // Stuck ChatGPT run -> stop it: clear state, close the (invisible) worker tab, tell an open popup.
   const failCg = (reason: string) => {
+    dlog('bg', 'watchdog-fail-chatgpt', { err: reason });
     disarmCg(); void closeCgTab();
     chrome.storage.local.set({ [CG_STATUS]: 'error', [CG_ERROR]: reason, 'aibadges:cg:running': 0, [CG_PROGRESS]: null });
     chrome.storage.local.remove(['aibadges:cg:tabId', 'aibadges:cg:autorun']);
@@ -225,9 +228,16 @@ export default defineBackground(() => {
     else failRun('Interrupted — the run stopped unexpectedly. Reopen Claude.ai and run again.');
   });
 
+  captureGlobalErrors('background');
+
   let blink = false;
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id) return;
+    // Every lifecycle message lands in the local diagnostic log (the two sub-second tickers
+    // excluded, or they would flood the ring buffer). Scalar fields only; sanitized at the sink.
+    if (msg?.type && msg.type !== 'aibadges:progress' && msg.type !== 'aibadges:cg-heartbeat') {
+      dlog('bg', String(msg.type), { err: msg.error, phase: msg.phase, done: msg.done, total: msg.total, batch: msg.batch, version: msg.version, skipped: msg.skippedBatches });
+    }
     switch (msg?.type) {
       case 'aibadges:cg-spawn-batch': {
         // Orchestrator wants a background worker tab for one extraction batch. Ack only after the
