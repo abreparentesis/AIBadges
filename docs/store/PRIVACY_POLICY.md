@@ -1,6 +1,8 @@
 # AI Fluency Index privacy policy
 
-Last updated: July 6, 2026
+> Source of truth for the policy text. The hosted rendering lives at https://aibadges-api.mindmaterial.io/privacy (`server/src/privacy.ts`) — keep the two in sync.
+
+Last updated: July 8, 2026
 
 AI Fluency Index is a browser extension that turns your own AI chat history into an evidence-backed measure of how skillfully you work with AI (four fluency dimensions and a 1-100 score), plus a badge you can choose to share. This policy explains what data the extension touches, where it is processed, and what (little) ever leaves your device.
 

@@ -202,7 +202,7 @@ bun run build   # sanity-check the production build compiles
 bun run zip     # produces client/.output/client-<version>-chrome.zip
 ```
 
-Everything you paste into the developer dashboard (single-purpose description, all six permission justifications, data-use disclosure, listing copy, pre-submission checklist) is in [store/CHROME_WEB_STORE.md](store/CHROME_WEB_STORE.md). Do not rewrite that content here or elsewhere; it is the single source of truth for the listing. The privacy policy to host is [store/PRIVACY_POLICY.md](store/PRIVACY_POLICY.md); its public URL goes in the dashboard's privacy policy field.
+Everything you paste into the developer dashboard (single-purpose description, all six permission justifications, data-use disclosure, listing copy, pre-submission checklist) is in [store/CHROME_WEB_STORE.md](store/CHROME_WEB_STORE.md). Do not rewrite that content here or elsewhere; it is the single source of truth for the listing. The privacy policy is served by the backend itself at `/privacy` (`server/src/privacy.ts`; text source of truth in [store/PRIVACY_POLICY.md](store/PRIVACY_POLICY.md), keep them in sync) — for the reference deployment that is https://aibadges-api.mindmaterial.io/privacy, and that URL goes in the dashboard's privacy policy field.
 
 ### Distributing prebuilt zips (before or alongside the store)
 

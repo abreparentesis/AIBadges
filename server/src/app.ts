@@ -4,6 +4,7 @@ import { bodyLimit } from 'hono/body-limit';
 import type { Database } from 'bun:sqlite';
 import { ProfileSchema, SignalInputSchema } from './types';
 import { rateLimiter, securityHeaders } from './hardening';
+import { renderPrivacyPage } from './privacy';
 import { renderBadgeSvg, svgToPng, loadFallbackPng, type StatBadgeContent } from './og';
 
 const PROVENANCE_LABEL = 'Self-computed in your own AI session. Not verified by us.';
@@ -251,6 +252,10 @@ export function createApp(db: Database, opts: {
   app.use('/og/*', rateLimiter({ windowMs: 60_000, max: opts.publicMaxPerMinute ?? 120 }));
 
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // The hosted privacy policy — the URL the Chrome Web Store listing points at. Static, no
+  // scripts, same visual language as the share pages.
+  app.get('/privacy', (c) => c.html(renderPrivacyPage()));
 
   // POST /v1/profile — store a new profile version (registers the user on first push).
   app.post('/v1/profile', async (c) => {

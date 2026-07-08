@@ -12,7 +12,7 @@ Paste one block per field in the "Privacy practices" tab.
 
 ### storage
 
-> Stores the user's generated profile (behavioral claims, scores, and the verbatim evidence quotes that back them) locally in extension storage. Local storage is the core of our privacy model: the full profile including quotes stays on the device, and only a distilled badge is ever synced.
+> Stores the user's fluency result (the four dimension bands, score, and the verbatim evidence quotes that back them) locally in extension storage. Local storage is the core of our privacy model: the full result including quotes stays on the device, and only a distilled badge is ever synced.
 
 ### scripting
 
@@ -32,7 +32,7 @@ Paste one block per field in the "Privacy practices" tab.
 
 ### Host permission: https://aibadges-api.mindmaterial.io/*
 
-> Our own API. Receives only the distilled badge (claims, scores, type, trajectory, opaque evidence ids); verbatim chat quotes are stripped in code before any request, and the boundary is covered by automated tests. Also serves the share pages for badges the user marks public.
+> Our own API. Receives only the distilled badge (fluency score, level, the four dimension bands, opaque evidence ids); verbatim chat quotes are stripped in code before any request, and the boundary is covered by automated tests. Also serves the share pages for badges the user marks public and the hosted privacy policy.
 
 ## Remote code
 
@@ -77,13 +77,13 @@ Category: Productivity (Tools also fits; Productivity gets more traffic).
 
 - At least one screenshot, 1280x800 or 640x400 (popup on claude.ai, the results page, a share page)
 - Small promo tile, 440x280 (optional but shown in more placements)
-- Public URL for the hosted privacy policy
+- Privacy policy URL (already hosted): https://aibadges-api.mindmaterial.io/privacy
 
 ## Pre-submission checklist
 
 - [ ] Developer account registered, $5 fee paid, publisher email verified, 2FA on
 - [ ] EU trader declaration completed (declare non-trader if publishing as an individual without monetization)
-- [ ] Privacy policy hosted and URL set in the dashboard
+- [ ] Privacy policy URL set in the dashboard: https://aibadges-api.mindmaterial.io/privacy (served by the backend, `server/src/privacy.ts`)
 - [ ] Permission justifications pasted (all six above)
 - [ ] Data-use disclosure checked and certified
 - [ ] Store zip uploaded — `cd client && bun run zip` produces `client/.output/*-chrome.zip` from a fresh production build

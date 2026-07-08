@@ -49,7 +49,7 @@ export async function securityHeaders(c: Context, next: Next) {
   await next();
   c.header('X-Content-Type-Options', 'nosniff');
   const path = new URL(c.req.url).pathname;
-  if (path.startsWith('/s/')) {
+  if (path.startsWith('/s/') || path === '/privacy') {
     c.header('Referrer-Policy', 'no-referrer');
     c.header('X-Frame-Options', 'DENY');
     c.header('Content-Security-Policy', [

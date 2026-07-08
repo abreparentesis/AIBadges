@@ -543,3 +543,18 @@ describe('hardening', () => {
     }
   });
 });
+
+describe('privacy policy page', () => {
+  it('serves the standalone policy with security headers and no off-product content', async () => {
+    const app = makeOpenApp();
+    const res = await app.request('/privacy');
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Privacy policy');
+    expect(html).toContain('AI FLUENCY INDEX');
+    expect(html).not.toMatch(/personality|cognitive type|trajectory|interview/i);
+    expect(html).not.toContain('<script'); // static page, no scripts — matches the CSP
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('content-security-policy') ?? '').toContain("default-src 'none'");
+  });
+});
