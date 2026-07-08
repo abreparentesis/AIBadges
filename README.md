@@ -12,7 +12,6 @@ The defining constraint: **the analysis runs in the user's own AI session, and o
 |---|---|
 | `client/` | The browser extension (WXT, MV3, React 19, TypeScript). Capture + inference + the results UI. This is the product. |
 | `server/` | A thin backend (Hono + `bun:sqlite`, single container). Stores distilled badges and serves public share pages. Never receives raw chats. |
-| `interviews/` | A separate B2B study tool (live interview guide, transcript coding, reports). Not product code. See [interviews/README.md](interviews/README.md). |
 | `docs/` | The authoritative docs (below), plus design specs and research notes. |
 | `docs/ARCHITECTURE.md` | How the system works: data model, the inference engine, the privacy boundary, the per-provider paths, the backend. **Read this first.** |
 | `docs/DEPLOYMENT.md` | Server install on any VM, pointing the extension at your own backend, Chrome Web Store publishing. |

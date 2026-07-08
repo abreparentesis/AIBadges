@@ -1,7 +1,0 @@
-Sebastian: Thanks for making the time today. Which AI line items are in your budget right now?
-P2: We pay for Copilot, about 300 seats, and ChatGPT Enterprise for the analysts.
-Trending up roughly 40 percent year over year.
-Sebastian: Walk me through the last renewal. What data did you have?
-P2: Honestly, seat counts from the vendor portal and gut feel. We renewed everything as-is because nobody could tell me who actually used their seat well.
-Sebastian: Have you ever cut an AI subscription?
-P2: Once. We killed a transcription tool when finance flagged that usage was near zero. That was luck, the invoice was small enough to question.

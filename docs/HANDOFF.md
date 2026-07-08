@@ -18,7 +18,6 @@ The product is **fluency-only**: four fluency dimensions (Delegation, Descriptio
 | Results UI (evidence-auditable bands, per-provider sharing, "try next" actions) | Done. |
 | Backend | Deployed at `aibadges-api.mindmaterial.io` (permissionless registration). Hardened: per-key sliding-window rate limits (writes 30 per 5 min per bearer key; public `/s/` and `/og/` pages 120 per minute per client), 256 KB body cap on `/v1/*`, security headers (nosniff everywhere; CSP + no-referrer + frame-deny on `/s/` pages), compose healthcheck on `/health`, docker log rotation, and `server/scripts/backup.sh` (consistent `VACUUM INTO` snapshots, keeps 14, cron-able). |
 | Chrome Web Store | Submission pack ready in [store/CHROME_WEB_STORE.md](store/CHROME_WEB_STORE.md) (listing copy, permission justifications, privacy policy, checklist). Missing only screenshots and a registered developer account. |
-| B2B validation study tooling (`interviews/` app) | Live at `interviews.mindmaterial.io` (docker compose + Caddy, basic auth). Separate tool, not product code; see [interviews/README.md](../interviews/README.md). |
 
 Tests: client Vitest suite (234 tests) and server `bun test` both pass (`cd client && bun run test`; `cd server && bun test`). Builds are clean.
 
