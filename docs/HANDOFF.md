@@ -1,33 +1,34 @@
 # AIBadges handoff
 
-For the team picking this up. Read the [README](../README.md) and [ARCHITECTURE](ARCHITECTURE.md) first; this doc covers state, limitations, how to deploy, and what to do next.
+For the team picking this up. Read the [README](../README.md) and [ARCHITECTURE](ARCHITECTURE.md) first; this doc covers current state, known limitations, what to do first, and gotchas. Deployment lives in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-> There is also an auto-generated `docs/handoff/HANDOFF.md` written by the previous author's tooling. It is a historical session log and is stale (it predates the ChatGPT work and the personality pivot). This file is the current source of truth.
+> Where any document conflicts with the code, the code wins. README, ARCHITECTURE, DEPLOYMENT, and this doc were all brought current together at handoff time.
 
 ## Current state
 
+The product is **fluency-only**: four fluency dimensions (Delegation, Description, Discernment, Diligence), evidence-capped bands, an adversarial audit turn that re-judges every band against its quotes, a `fluencyScore` of 1-100 capped at 80 for chat-only evidence, and levels Beginner / Intermediate / Advanced / Expert. The personality lens (cognitive type, trajectory) is deactivated by the `FLUENCY_ONLY` flag in `client/src/config.ts`; it is gated, not deleted.
+
 | Area | State |
 |---|---|
-| Claude path (capture → in-session inference → profile → badge sync) | Live, validated end to end in real runs. |
-| Profile report UI (gamified, evidence-auditable, per-section private/public sharing) | Done. |
-| Backend (store badge, share tokens, server-rendered `/s/:token` report) | Deployed at `aibadges-api.mindmaterial.io`. |
-| ChatGPT capture (read-only history fetch + linearization) | Done, verified against the live API during a spike. |
-| ChatGPT import (lenient parse of the GPT reply → same anchoring as Claude) | Done, unit-tested for both reply shapes. |
-| ChatGPT manual handoff (export → GPT → paste back) | Done. |
-| ChatGPT in-page bridge (prefill composer → user sends → read reply) | Built; **DOM interaction not yet verified against the live chatgpt.com UI.** |
-| Credibility hardening (evidence anchoring, confidence grading, quote verification) | Done in the engine; deeper validation (vs a real questionnaire, zkTLS provenance) is future work. |
-| B2B validation study tooling (`interviews/` app: live guide, GLM transcript coding, decision rules, reports) | **Live at `interviews.mindmaterial.io`** (docker compose + Caddy on the Billions box, basic auth, real-GLM E2E verified) — see [interviews/README.md](../interviews/README.md). Interview kit: [research/b2b-validation-interviews.md](research/b2b-validation-interviews.md). |
+| Claude path (capture → in-session inference → scored profile → badge sync) | Live, validated end to end in real runs. |
+| ChatGPT path (automated background-tab run: capture → analysis in throwaway conversations → import) | Live. The run checkpoints per batch, resumes after mid-flight failures, and deletes its conversations. A manual export/paste fallback remains. |
+| Per-provider separation | Claude and ChatGPT are measured separately: each provider has its own local storage slots, its own backend user key (`client/src/store/userkey.ts`), and its own share URL. |
+| Score stability machinery | A persistent local evidence pool per provider (`aibadges:evidencePool:*`, capped at 200 units, verbatim quotes, LOCAL ONLY, never synced); incremental extraction via a fingerprint scan set (`aibadges:scanned:*`, versioned by `SCANNER_VERSION` in `client/src/store/scanset.ts` so extractor upgrades force a full rescan); two-pass extraction (a general sweep plus a reaction-focused sweep). |
+| Publish state | Survives re-runs: a badge marked public stays public, and a re-run republishes fresh scores to the same share URL. |
+| Results UI (evidence-auditable bands, per-provider sharing, "try next" actions) | Done. |
+| Backend | Deployed at `aibadges-api.mindmaterial.io` (permissionless registration). Hardened: per-key sliding-window rate limits (writes 30 per 5 min per bearer key; public `/s/` and `/og/` pages 120 per minute per client), 256 KB body cap on `/v1/*`, security headers (nosniff everywhere; CSP + no-referrer + frame-deny on `/s/` pages), compose healthcheck on `/health`, docker log rotation, and `server/scripts/backup.sh` (consistent `VACUUM INTO` snapshots, keeps 14, cron-able). |
+| Chrome Web Store | Submission pack ready in [store/CHROME_WEB_STORE.md](store/CHROME_WEB_STORE.md) (listing copy, permission justifications, privacy policy, checklist). Missing only screenshots and a registered developer account. |
+| B2B validation study tooling (`interviews/` app) | Live at `interviews.mindmaterial.io` (docker compose + Caddy, basic auth). Separate tool, not product code; see [interviews/README.md](../interviews/README.md). |
 
-Tests: client Vitest suite and server `bun test` both pass (`cd client && bun run test`; `cd server && bun test`). Builds are clean.
+Tests: client Vitest suite (234 tests) and server `bun test` both pass (`cd client && bun run test`; `cd server && bun test`). Builds are clean.
 
 ## Known limitations and risks
 
-- **The ChatGPT bridge is coupled to chatgpt.com's DOM.** Composer selectors, the "generation finished" signal (stop-button absence), and the assistant-message structure can change when OpenAI ships UI updates. `client/src/capture/chatgpt-bridge.ts` uses multi-fallback selectors and a stability window, and any miss degrades to the manual export/paste path with an in-page error hint, but the happy path needs a live run to confirm and will need occasional selector maintenance. The pure decision logic (`watcherDecision`) is unit-tested; the DOM reads are not (no DOM in the test env).
-- **Bridge payload size.** A large capture (the default is ~30 conversations) can exceed a single free-tier ChatGPT message. The handoff page warns when the capture is large and points to the manual file-upload fallback. Chunking is not implemented (see roadmap).
-- **Model variance.** ChatGPT-derived profiles come from whatever model the user's tier runs, which differs from Claude. This is fine for a single user's self-view but is a calibration risk if you later rank or compare users across providers.
-- **Concurrent dual-provider runs.** The run status model assumes one profiling run at a time. Running a Claude in-session profile and a ChatGPT bridge import simultaneously is not handled (the ChatGPT completion would mark status `done`). Not a realistic user flow, but worth knowing.
-- **No Chrome Web Store packaging.** The extension is distributed as an unpacked build today. Store submission (icons, listing, review) is not set up.
-- **Bot detection.** We deliberately never bypass OpenAI's sentinel proof-of-work or Turnstile, and never auto-submit in the bridge. Keep it that way. The in-session ChatGPT completion path and an earlier proof-of-work solver were removed on purpose; do not reintroduce them.
+- **Chat-only ceiling of 80.** The `fluencyScore` derivation in `client/src/engine/assemble.ts` caps chat-derived scores at 80, and the Expert level band is reachable only once an agentic source (Claude Code / Codex transcripts) is ingested. That ingestion path does not exist yet, so today no user can score above 80 or reach Expert. This is deliberate honesty, not a bug.
+- **Cross-provider judge asymmetry.** The two providers are scored by different judges (the user's own Claude vs the user's own ChatGPT). In the local eval harness the GPT-side judge measured roughly one band more lenient than the Claude-side judge. Per-provider scores are self-consistent, but do not compare or rank across providers until this is calibrated; hardening the eval harness is the open lever.
+- **ChatGPT hidden-tab throttling is the flakiest surface.** The automated run operates hidden background tabs, and browsers throttle their timers to as little as one tick per minute. `client/src/capture/chatgpt-autorun.ts` compensates (per-batch checkpoints, heartbeats to the service worker watchdog, timeouts gated on a minimum number of real polls), but this remains the most fragile path and is coupled to chatgpt.com internals. Expect occasional maintenance when OpenAI ships changes.
+- **Construct validity is unproven.** No public ground-truth dataset anchors the scores. The bands are internally disciplined (evidence-capped, adversarially audited), but nothing external calibrates whether an "Advanced" here means what a hiring manager would call advanced. Treat the score as evidence-backed and self-consistent, not externally validated.
+- **Bot detection stance.** The extension never bypasses OpenAI's sentinel proof-of-work or Cloudflare Turnstile. The automated run submits through the page's own composer inside the user's logged-in session and backs off when a challenge is present (`hasChallenge` in `client/src/capture/chatgpt-bridge.ts`). An earlier in-session completion path and proof-of-work solver were removed on purpose; do not reintroduce them.
 
 ## Environment and secrets
 
@@ -36,41 +37,38 @@ Build/run configuration is via gitignored `.env` files; copy-pasteable templates
 - **Client** (`client/.env`, baked into the build by WXT): `WXT_AIBADGES_BACKEND`, `WXT_AIBADGES_INVITE`, `WXT_AIBADGES_GPT_URL`. All have safe fallbacks in `client/src/config.ts` (production backend, empty invite, the current Custom GPT url).
 - **Server** (`server/.env`): `INVITE_TOKEN` (optional; empty means permissionless registration), `PORT` (default 8095), `DB_PATH` (default `./data/aibadges.db`).
 
-Registration is permissionless by default: anyone who installs the extension can push and share a badge, with no shared secret to distribute. Set `INVITE_TOKEN` (and the matching client `WXT_AIBADGES_INVITE`) only if you want to gate first-time registration. There are no third-party API keys anywhere in the product (all inference is in the user's own session).
+Registration is permissionless by default: anyone who installs the extension can push and share a badge, with no shared secret to distribute. Set `INVITE_TOKEN` (and rebuild the client with the matching `WXT_AIBADGES_INVITE`) only if you want to gate first-time registration. There are no third-party API keys anywhere in the product (all inference is in the user's own session).
 
-## Deployment runbook
+## Deployment
 
-**Backend.** Containerized; runs behind a reverse proxy.
+The full runbook is [DEPLOYMENT.md](DEPLOYMENT.md): server install from scratch on any VM (Docker or bare Bun), reverse proxy, backups, upgrades, restore, pointing the extension at your own backend, and Chrome Web Store publishing.
 
-```bash
-cd server
-# optional: set INVITE_TOKEN in server/.env to gate registration (omit for permissionless)
-docker compose up -d --build      # binds 127.0.0.1:8095, SQLite in ./data (mounted volume)
-```
+Reference production facts, for orientation: the host directory `/opt/aibadges-backend` is an rsync'd copy of the repo's `server/` directory (not a git clone); a deploy is rsync (excluding `.env`, `data/`, `node_modules/`, `.git`) followed by `docker compose up -d --build`; the container binds `127.0.0.1:8095`; a native Caddy reverse-proxies `aibadges-api.mindmaterial.io` with automatic TLS; SQLite persists in `./data` (mode 0700). Verify with `GET /health` returning `{"ok":true}`.
 
-The production instance runs under a reverse proxy (Caddy) terminating TLS at `aibadges-api.mindmaterial.io` and forwarding to `127.0.0.1:8095`. SQLite persists in the mounted `data/` volume; back that up to retain badges. To move it, stand up the container anywhere, point a public HTTPS hostname at it, and set `WXT_AIBADGES_BACKEND` in the client build to that hostname.
+## First week checklist for the new team
 
-**Extension.** `cd client && bun run build` produces `client/.output/chrome-mv3`, which is what users load unpacked today. For wider distribution, package that directory for the Chrome Web Store (not yet configured).
-
-## What needs a human (founder/team), not code
-
-- **A live end-to-end ChatGPT bridge run** on a logged-in account, to confirm the composer prefill and reply read work against the current UI and to tune selectors if needed. This is the one open verification item on the new feature.
-- **Judging whether the profile "feels true"** on real accounts (the long-standing validation task). Only a person can score that.
-- **The Custom GPT** (for the manual fallback) lives on OpenAI's platform under the founder's account. The hardened instructions that configure it are kept with the founder (and in the git history of the design specs); the bridge path does not require it.
+1. Register a Chrome Web Store developer account ($5 fee, verified publisher email, 2FA), and complete the EU trader declaration.
+2. Host the privacy policy ([store/PRIVACY_POLICY.md](store/PRIVACY_POLICY.md)) at a public URL and set it in the dashboard.
+3. Take the listing screenshots (1280x800: popup on claude.ai, the results page, a share page). They are the only asset still missing from the submission pack.
+4. Decide invite-gating for your deployment: keep permissionless registration, or set `INVITE_TOKEN` on the server and rebuild the client with `WXT_AIBADGES_INVITE`.
+5. Set up the backup cron on the server host (`server/scripts/backup.sh`; see [DEPLOYMENT.md](DEPLOYMENT.md)).
+6. Read the eval harness under `client/eval/` (extraction/synthesis/audit prompts, cached run artifacts, and the chatbench / prism / wildchat datasets; there is no separate doc, the artifacts are the doc). The cross-provider judge-leniency finding came from here, and hardening this harness is the prerequisite for any scoring change.
 
 ## Roadmap / next steps
 
-1. Live-verify and harden the ChatGPT bridge (selectors, a version canary that auto-falls-back to manual if the DOM contract breaks).
-2. Chunk large captures across multiple bridge messages so big histories fit free-tier limits.
-3. zkTLS provenance: wrap the capture fetches (TLSNotary / Reclaim / zkPass) so a shared badge can carry a proof that its evidence is real chat data from a genuine account, verifiable without revealing the chats. This attaches to the **capture** step (the chatgpt.com / claude.ai data fetch) and is independent of how the GPT reply gets back, so it composes with either handoff. It proves data authenticity, not inference validity.
-4. Validate the cognitive-type and trajectory output against a real questionnaire to calibrate the credibility claims.
-5. Chrome Web Store packaging and a real onboarding flow.
+1. Harden the eval harness and calibrate the GPT-side judge against the Claude-side judge, so cross-provider scores become comparable.
+2. Agentic-source ingestion (Claude Code / Codex transcripts) to unlock the Expert range and scores above 80.
+3. Chrome Web Store publication (the pack is ready; see the checklist above) and a real onboarding flow.
+4. A ground-truth validation study to give the scores external construct validity.
+5. zkTLS provenance: wrap the capture fetches (TLSNotary / Reclaim / zkPass) so a shared badge can carry a proof that its evidence is real chat data from a genuine account, verifiable without revealing the chats. This attaches to the capture step and proves data authenticity, not inference validity.
 
 ## Gotchas
 
-- **Toolchain is Bun**, not npm. Use `bun install` / `bun run` in both `client/` and `server/`. The client tracks a `package-lock.json` and the server a `bun.lock`; either installs fine under Bun. The server uses `bun:sqlite` (a Bun built-in), so it must run under Bun, not Node.
+- **Toolchain is Bun**, not npm. Use `bun install` / `bun run` in both `client/` and `server/`. The server uses `bun:sqlite` (a Bun built-in), so it must run under Bun, not Node.
+- **`FLUENCY_ONLY` gates, it does not delete.** The personality lens (cognitive type, trajectory) is switched off end to end by the flag in `client/src/config.ts`: not computed, not rendered, not synced. Flip it to false to reactivate. Do not "clean up" the gated code paths without understanding this.
+- **Bump `SCANNER_VERSION` when the extractor changes.** Incremental extraction trusts the scan set (`client/src/store/scanset.ts`): a conversation marked scanned is never re-read. If you improve an extraction prompt or model and forget to bump that provider's version, old conversations keep their old, weaker evidence forever.
+- **The evidence pool is local only.** `aibadges:evidencePool:*` holds verbatim quotes and must never sync. The privacy boundary is `chatPrivateProfile()` in `client/src/sync/backend.ts`, covered by tests; do not add a code path that sends conversation text, quotes, or the capture payload to any server.
 - **Content-script CORS.** Backend calls originate from the provider origin (claude.ai / chatgpt.com) under MV3, so `/v1/*` is CORS-open with bearer auth (no cookies). Keep that when changing the backend.
 - **The server schema must keep `evidence` optional.** The client strips evidence before pushing; if you tighten the server schema to require it, the badge-only push will 400.
 - **Personal tooling in the repo.** `.claude/`, `.mcp.json` (points at the previous author's local DevPlanner path), and the board/agent sections of `CLAUDE.md` are the previous author's Claude Code setup. They do not affect the build and can be ignored or removed. `CLAUDE.md` also contains useful project conventions worth skimming.
-- **Git history.** Work was done on a `feat/chatgpt-capture` branch and fast-forwarded into `main`; `main` is the integration branch and is current. Commits stage files by name (no `git add -A`).
-- **The capture payload is on-device only.** It lives at `chrome.storage.local['aibadges:chatgpt:capture']` and is cleared after a successful import. It is never sent to a server. Keep it that way.
+- **Commits stage files by name** (no `git add -A`); `main` is the integration branch and is current.

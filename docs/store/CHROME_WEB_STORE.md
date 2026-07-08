@@ -88,7 +88,7 @@ Category: Productivity (Tools also fits; Productivity gets more traffic).
 - [ ] Data-use disclosure checked and certified
 - [ ] Store zip uploaded — `cd client && bun run zip` produces `client/.output/*-chrome.zip` from a fresh production build
 - [ ] Screenshots uploaded
-- [ ] Version in wxt.config.ts / package.json matches what you intend to ship
+- [ ] Version in `client/package.json` (the manifest version comes from there) matches what you intend to ship
 - [ ] Consider first publishing as unlisted for a shakedown round
 
 Notes for later: server data deletion is self-serve. `DELETE /v1/profile` erases everything held for a key, and the results page exposes it as "Delete my server data"; the policy documents it, with email as a fallback. The `tabs` permission was removed before submission: host permissions on the provider origins are enough for the URL-filtered `chrome.tabs.query` calls, and `tabs.create`/`remove`/`sendMessage` need no permission, so the install prompt no longer shows "Read your browsing history".
