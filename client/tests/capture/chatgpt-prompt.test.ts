@@ -30,3 +30,26 @@ describe('buildBridgePrompt', () => {
     expect(buildBridgePrompt(bundle)).not.toContain('uuid-A');
   });
 });
+
+// The audit is the enforcement point for band honesty; these pins keep its named
+// anti-patterns from being silently dropped in a future prompt edit.
+describe('audit prompt anti-patterns', () => {
+  it('names the bare-imperative delegation cap, the first-message-citation diligence rule, and the reuse rule', async () => {
+    const { buildAuditPrompt } = await import('../../src/capture/chatgpt-prompt');
+    const audit = buildAuditPrompt();
+    expect(audit).toContain('BARE IMPERATIVE');
+    expect(audit).toContain('FIRST-MESSAGE requests to cite sources');
+    expect(audit).toContain('REUSE:');
+  });
+
+  it('the Claude-path audit carries the same rules', async () => {
+    const { capabilityAuditPrompt } = await import('../../src/prompts');
+    const audit = capabilityAuditPrompt([], { aiFluency: {
+      delegation: { band: 'developing', evidenceIds: [] }, description: { band: 'developing', evidenceIds: [] },
+      discernment: { band: 'developing', evidenceIds: [] }, diligence: { band: 'developing', evidenceIds: [] },
+    }, yeggeStage: { stage: 1, evidenceIds: [] }, domains: [] });
+    expect(audit).toContain('BARE IMPERATIVE');
+    expect(audit).toContain('FIRST-MESSAGE requests to cite sources');
+    expect(audit).toContain('REUSE:');
+  });
+});
