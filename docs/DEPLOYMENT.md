@@ -204,6 +204,20 @@ bun run zip     # produces client/.output/client-<version>-chrome.zip
 
 Everything you paste into the developer dashboard (single-purpose description, all six permission justifications, data-use disclosure, listing copy, pre-submission checklist) is in [store/CHROME_WEB_STORE.md](store/CHROME_WEB_STORE.md). Do not rewrite that content here or elsewhere; it is the single source of truth for the listing. The privacy policy to host is [store/PRIVACY_POLICY.md](store/PRIVACY_POLICY.md); its public URL goes in the dashboard's privacy policy field.
 
+### Distributing prebuilt zips (before or alongside the store)
+
+End users should not need Bun. Until the store listing is live (and for beta channels after), attach the built zip to a GitHub Release so people can install without a toolchain:
+
+```bash
+cd client && bun run zip
+gh release create v$(node -p "require('./package.json').version") \
+  .output/client-*-chrome.zip \
+  --title "AI Fluency Index v$(node -p "require('./package.json').version")" \
+  --notes "Unzip, open chrome://extensions, enable Developer mode, Load unpacked, select the unzipped folder."
+```
+
+Out-of-store installs have two inherent limits, so say them plainly in the release notes: Chrome shows a developer-mode notice, and nothing auto-updates (users grab the next release manually). Self-hosting a `.crx` is not an option; Chrome only accepts non-store `.crx` installs through enterprise policy.
+
 ### Version bump flow (every subsequent release)
 
 1. Bump `version` in `client/package.json`. WXT derives the manifest version from it (`wxt.config.ts` does not override it).

@@ -26,7 +26,17 @@ The extension captures the user's conversation history from the AI provider's ow
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full picture.
 
-## Quickstart
+## Installing the extension
+
+Three ways, in order of preference:
+
+1. **Chrome Web Store** (once published): one click, auto-updates. The submission pack is ready in [docs/store/](docs/store/CHROME_WEB_STORE.md).
+2. **Prebuilt zip, no toolchain**: download the latest `client-<version>-chrome.zip` from the repo's [Releases](../../releases), unzip it, open `chrome://extensions`, enable Developer mode, **Load unpacked**, and select the unzipped folder. Caveats of any out-of-store install: Chrome shows a developer-mode notice, and there are no auto-updates (grab the next release manually).
+3. **Build from source** (below): for development, or if you want to audit the code and run exactly what you built — worth doing for a privacy-sensitive extension.
+
+Whichever way you install: open claude.ai or chatgpt.com (signed in) and click the toolbar icon.
+
+## Quickstart (from source)
 
 Prerequisites: [Bun](https://bun.sh) (toolchain for both client and server) and a Chromium browser for loading the unpacked extension.
 
@@ -37,11 +47,11 @@ cd client
 bun install
 bun run test     # vitest unit suite (234 tests)
 bun run build    # outputs the unpacked extension to client/.output/chrome-mv3
-# bun run zip    # store-uploadable zip at client/.output/client-<version>-chrome.zip
+# bun run zip    # distributable zip at client/.output/client-<version>-chrome.zip
 # bun run dev    # WXT dev mode with HMR
 ```
 
-Then load it: open `chrome://extensions`, enable Developer mode, **Load unpacked**, and select `client/.output/chrome-mv3`. Use it by opening claude.ai or chatgpt.com (signed in) and clicking the toolbar icon.
+Then load it: open `chrome://extensions`, enable Developer mode, **Load unpacked**, and select `client/.output/chrome-mv3`.
 
 Build-time configuration lives in a gitignored `client/.env` (templates in [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)). Without it the build falls back to the hosted, permissionless backend, so scoring and sharing work out of the box with nothing to configure. Point `WXT_AIBADGES_BACKEND` at your own deployment if you'd rather not use the hosted one; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
