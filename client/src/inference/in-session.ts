@@ -2,6 +2,9 @@ import type { ModelCaller } from './types';
 
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
+interface ClaudeContentBlock { type?: string; text?: string }
+interface ClaudeConversationMessage { sender?: string; text?: string; content?: ClaudeContentBlock[] }
+
 const BASE = 'https://claude.ai/api';
 const ROOT_PARENT = '00000000-0000-4000-8000-000000000000';
 const DEFAULT_TIMEOUT_MS = 75000;
@@ -64,6 +67,10 @@ function backoffMs(res: Response | null, attempt: number, baseMs: number): numbe
 
 export function extractTextFromSse(sse: string): string {
   let text = '';
+  // Claude.ai has used both a legacy `completion` stream and the newer Messages API
+  // `content_block_delta` stream. A response should use one format, but lock onto the
+  // first text family we see so a transitional stream cannot duplicate its output.
+  let format: 'completion' | 'content_block_delta' | null = null;
   for (const line of sse.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed.startsWith('data:')) continue;
@@ -71,17 +78,39 @@ export function extractTextFromSse(sse: string): string {
     if (!payload || payload === '[DONE]') continue;
     try {
       const evt = JSON.parse(payload);
-      if (evt?.type === 'content_block_delta' && evt?.delta?.type === 'text_delta') text += evt.delta.text ?? '';
+      if (evt?.type === 'completion' && typeof evt.completion === 'string' && format !== 'content_block_delta') {
+        format = 'completion';
+        text += evt.completion;
+      } else if (evt?.type === 'content_block_delta' && evt?.delta?.type === 'text_delta' && format !== 'completion') {
+        format = 'content_block_delta';
+        text += evt.delta.text ?? '';
+      }
     } catch { /* keepalive / non-JSON */ }
   }
   return text;
+}
+
+function assistantMessageText(body: unknown): string {
+  const messages = (body as { chat_messages?: unknown })?.chat_messages;
+  if (!Array.isArray(messages)) return '';
+  const message = [...messages].reverse().find((m): m is ClaudeConversationMessage =>
+    !!m && typeof m === 'object' && (m as ClaudeConversationMessage).sender === 'assistant',
+  );
+  if (!message) return '';
+  const blocks = Array.isArray(message.content) ? message.content : [];
+  const blockText = blocks
+    .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('');
+  return blockText || message.text || '';
 }
 
 /**
  * Runs profiling prompts in the user's own Claude.ai session. Each call creates a labeled scratch
  * conversation, streams the completion, and deletes it. Every call is bounded by a timeout via
  * AbortController — a stalled/throttled completion aborts (and is cleaned up) instead of hanging the
- * whole run forever. Model is chosen per call (fast for bulk extraction, best for synthesis).
+ * whole run forever. A caller may pin a known-valid model, but callers should otherwise let
+ * Claude.ai select the account's current default rather than replaying model ids from history.
  */
 export class InSessionClaudeCaller implements ModelCaller {
   private scratchIds = new Set<string>();
@@ -102,7 +131,9 @@ export class InSessionClaudeCaller implements ModelCaller {
   }
 
   async complete(prompt: string, opts?: { system?: string; model?: string; timeoutMs?: number }): Promise<string> {
-    const model = opts?.model ?? this.model;
+    // Conversation metadata describes models used in the past, not models this account is allowed
+    // to start today. Sending those stale ids causes Claude.ai to reject every completion with 403.
+    const model = this.model;
     const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     let lastStatus = 0;
     // In-session completions are rate-limited (429) and occasionally overloaded (529),
@@ -168,7 +199,23 @@ export class InSessionClaudeCaller implements ModelCaller {
           }) },
       );
       if (!compRes.ok) return { ok: false, status: compRes.status, phase: 'completion', res: compRes, body: await compRes.text().catch(() => '') };
-      return { ok: true, text: extractTextFromSse(await compRes.text()) };
+      const streamed = extractTextFromSse(await compRes.text());
+      if (streamed.trim()) return { ok: true, text: streamed };
+
+      // Claude.ai's private endpoint has changed its SSE envelope more than once. The completed
+      // message is also persisted to the scratch conversation, which is a stable fallback when
+      // an unfamiliar envelope carries no extractable text.
+      try {
+        const messageRes = await this.fetchFn(
+          `${BASE}/organizations/${encodeURIComponent(this.orgId)}/chat_conversations/${convId}?tree=True&rendering_mode=messages`,
+          { credentials: 'include', signal: ctrl.signal },
+        );
+        if (messageRes.ok) {
+          const saved = assistantMessageText(await messageRes.json());
+          if (saved.trim()) return { ok: true, text: saved };
+        }
+      } catch { /* the stream result remains authoritative when this best-effort fallback fails */ }
+      return { ok: true, text: streamed };
     } finally {
       clearTimeout(timer);
       this.active.delete(ctrl);

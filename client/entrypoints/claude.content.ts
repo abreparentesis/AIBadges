@@ -11,7 +11,6 @@ import { ensureUserKey } from '../src/store/userkey';
 import { BackendSync, needsRepushKey } from '../src/sync/backend';
 import { carryOverSharing } from '../src/sync/signal-state';
 import { BACKEND_URL, INVITE_TOKEN } from '../src/config';
-import { pickModels } from '../src/engine/models';
 import { selectAcrossTimeline } from '../src/capture/select';
 import { maybeMountReveal } from '../src/ui/reveal';
 import { captureGlobalErrors } from '../src/debug/dlog';
@@ -64,11 +63,10 @@ export default defineContentScript({
         const fullList = await adapter.listConversations();
         const conversations = selectAcrossTimeline(fullList, 90);
 
-        // Choose models from what this account actually has: Sonnet-or-better for evidence
-        // extraction (Haiku under-mined reaction evidence), the best for synthesis. Never
-        // assume a tier.
-        const { extract, best } = pickModels(conversations.map((c) => c.model));
-        const caller = new InSessionClaudeCaller(org, best ?? conversations[0]?.model ?? null);
+        // The list records historical model ids, not the account's current entitlements. Let
+        // Claude.ai choose the active subscription-compatible default to avoid 403 rejections
+        // from stale or unavailable ids.
+        const caller = new InSessionClaudeCaller(org);
         activeCaller = caller;
 
         // Incremental extraction: fetch + extract only conversations that are new or changed since
@@ -97,13 +95,12 @@ export default defineContentScript({
         try {
           const profile = await buildProfile(convos, caller, {
             version, now,
-            modelProvenance: `claude-in-session (${extract ?? '?'} + ${best ?? '?'})`,
-            extractModel: extract ?? undefined, bestModel: best ?? undefined,
+            modelProvenance: 'claude-in-session (current Claude default)',
             // Budget sized for ~90 time-spread conversations at the calibration-validated
             // 2500 chars each (~225k total): still 6 chunks x 48k, and the scratch-conversation
-            // caller is API-parallel, so 3-wide extraction keeps wall-clock roughly flat vs
-            // the old 40-conversation run while more than doubling the window.
-            maxChars: 48000, maxChunks: 6, perConvoChars: 2500, concurrency: 3,
+            // Scratch conversation creation is rate-limited on Claude.ai. Two workers avoid the
+            // burst of 429s seen with three while still keeping the first full scan practical.
+            maxChars: 48000, maxChunks: 6, perConvoChars: 2500, concurrency: 2,
             priorEvidence: priorPool,
             onEvidencePool: (units) => { runPool = units.map(({ id: _id, ...u }) => u); },
             sourceWindow: {
@@ -151,7 +148,7 @@ export default defineContentScript({
               }
             }
           } catch (e) { console.warn('[aibadges] sync failed (non-fatal)', e); synced = `error: ${String(e)}`; }
-          console.log('[aibadges] done', { version, capturedChars, extract, best, thinking: profile.thinking.length, type: profile.type?.code ?? null, shifts: profile.trajectory.shifts.length, synced });
+          console.log('[aibadges] done', { version, capturedChars, model: 'current Claude default', thinking: profile.thinking.length, type: profile.type?.code ?? null, shifts: profile.trajectory.shifts.length, synced });
           return version;
         } finally { activeCaller = null; await caller.dispose(); }
       })()
