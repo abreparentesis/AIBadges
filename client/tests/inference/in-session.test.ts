@@ -17,11 +17,28 @@ const SSE = [
   '',
 ].join('\r\n');
 
+// Claude.ai's older browser completion endpoint streams text in `completion`, not
+// a Messages API content block. This is the shape returned in the reported failure.
+const LEGACY_SSE = [
+  'event: completion',
+  'data: {"type":"completion","completion":"{\\"aiFluency\\":"}',
+  '',
+  'event: completion',
+  'data: {"type":"completion","completion":"{}}"}',
+  '',
+].join('\r\n');
+
 type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
 describe('extractTextFromSse', () => {
   it('concatenates text_delta chunks and ignores other events', () => {
     expect(extractTextFromSse(SSE)).toBe('OK');
+  });
+  it('concatenates legacy completion chunks from Claude.ai', () => {
+    expect(extractTextFromSse(LEGACY_SSE)).toBe('{"aiFluency":{}}');
+  });
+  it('does not duplicate text when both stream shapes are present', () => {
+    expect(extractTextFromSse(`${SSE}\n${LEGACY_SSE}`)).toBe('OK');
   });
   it('returns empty string when there are no text deltas', () => {
     expect(extractTextFromSse('event: ping\r\ndata: {"type":"ping"}\r\n\r\n')).toBe('');
@@ -49,6 +66,50 @@ describe('InSessionClaudeCaller', () => {
     expect(calls.some(c => c.method === 'POST' && c.url.endsWith('/chat_conversations'))).toBe(true);
     expect(calls.some(c => c.url.includes('/completion'))).toBe(true);
     expect(calls.some(c => c.method === 'DELETE')).toBe(true);
+  });
+
+  it('does not send a historical per-call model id when the caller has no pinned model', async () => {
+    let completionBody: Record<string, unknown> | null = null;
+    const fetchFn: FetchFn = async (url, init) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'POST' && url.endsWith('/chat_conversations')) {
+        return { ok: true, status: 201, json: async () => ({ uuid: 's1' }) } as unknown as Response;
+      }
+      if (url.includes('/completion')) {
+        completionBody = JSON.parse(String(init?.body));
+        return { ok: true, status: 200, text: async () => SSE } as unknown as Response;
+      }
+      if (method === 'DELETE') return { ok: true, status: 204 } as unknown as Response;
+      throw new Error(`unexpected ${method} ${url}`);
+    };
+    const caller = new InSessionClaudeCaller('org1', null, fetchFn);
+    await caller.complete('hello', { model: 'stale-history-model' });
+    expect(completionBody?.model).toBeUndefined();
+  });
+
+  it('reads the saved assistant message when Claude uses an unknown stream envelope', async () => {
+    const fetchFn: FetchFn = async (url, init) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'POST' && url.endsWith('/chat_conversations')) {
+        return { ok: true, status: 201, json: async () => ({ uuid: 's1' }) } as unknown as Response;
+      }
+      if (url.includes('/completion')) {
+        return { ok: true, status: 200, text: async () => 'data: {"type":"unknown_envelope"}\n\n' } as unknown as Response;
+      }
+      if (method === 'GET' && url.includes('tree=True')) {
+        return {
+          ok: true, status: 200,
+          json: async () => ({ chat_messages: [
+            { sender: 'human', text: 'ignored' },
+            { sender: 'assistant', content: [{ type: 'text', text: '{"aiFluency":{}}' }] },
+          ] }),
+        } as unknown as Response;
+      }
+      if (method === 'DELETE') return { ok: true, status: 204 } as unknown as Response;
+      throw new Error(`unexpected ${method} ${url}`);
+    };
+    const caller = new InSessionClaudeCaller('org1', null, fetchFn);
+    await expect(caller.complete('hello')).resolves.toBe('{"aiFluency":{}}');
   });
 
   it('still deletes the scratch conversation when the completion fails', async () => {
