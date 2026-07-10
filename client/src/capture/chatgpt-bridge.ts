@@ -21,6 +21,132 @@ const COMPOSER_SELECTORS = [
 const STOP_SELECTORS = ['[data-testid="stop-button"]', 'button[aria-label*="Stop"]', 'button[data-testid="composer-stop-button"]'];
 const SEND_SELECTORS = ['#composer-submit-button', 'button[data-testid="send-button"]', 'button[aria-label="Send prompt"]', 'button[aria-label*="Send"]', 'main form button[type="submit"]'];
 const CHALLENGE_SELECTORS = ['iframe[src*="challenges.cloudflare.com"]', '[id*="turnstile"]', '[class*="turnstile"]'];
+const MODEL_PICKER_SELECTORS = [
+  'button[data-testid="model-switcher-dropdown-button"]',
+  'button[aria-label*="model" i]',
+  'button[aria-label*="ChatGPT" i]',
+];
+const MODEL_ITEM_SELECTORS = [
+  '[role="menuitem"]',
+  '[role="option"]',
+  'button',
+];
+
+export type ChatGptModelPolicy = 'current' | 'extract' | 'best';
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function normLabel(label: string): string {
+  return label.replace(/\s+/g, ' ').trim();
+}
+
+function isUnavailableModelLabel(label: string): boolean {
+  return /\b(upgrade|unavailable|limit reached|coming soon|disabled)\b/i.test(label);
+}
+
+function isNonChatModelLabel(label: string): boolean {
+  return /\b(deep research|research|agent|operator|image|video|canvas|temporary chat|settings|customize)\b/i.test(label);
+}
+
+export function scoreChatGptModelLabel(label: string, policy: Exclude<ChatGptModelPolicy, 'current'>): number {
+  const s = normLabel(label).toLowerCase();
+  if (!s || isUnavailableModelLabel(s) || isNonChatModelLabel(s)) return -Infinity;
+  if (policy === 'extract') {
+    let score = 10;
+    if (/\binstant\b/.test(s)) score += 100;
+    if (/\bfast\b/.test(s)) score += 90;
+    if (/\bmini\b|4o-mini|o4-mini/.test(s)) score += 80;
+    if (/\bauto\b|\bdefault\b/.test(s)) score += 65;
+    if (/\b4o\b|gpt-4o/.test(s)) score += 55;
+    if (/\bgpt-5\b|\bgpt-4\b/.test(s)) score += 45;
+    if (/\bthinking\b|\breasoning\b|\bo[1-9]\b/.test(s)) score += 20;
+    if (/\bpro\b|\bextended\b/.test(s)) score -= 200;
+    return score;
+  }
+
+  let score = 10;
+  if (/\bextended\b/.test(s)) score += 120;
+  if (/\bpro\b/.test(s)) score += 110;
+  if (/\bthinking\b|\breasoning\b/.test(s)) score += 90;
+  if (/\bgpt-5\b/.test(s)) score += 85;
+  if (/\bo[1-9]\b/.test(s)) score += 80;
+  if (/\bgpt-4\b|\b4o\b|gpt-4o/.test(s)) score += 60;
+  if (/\binstant\b|\bfast\b|\bmini\b/.test(s)) score += 25;
+  return score;
+}
+
+export function chooseChatGptModelLabel(
+  labels: string[], policy: Exclude<ChatGptModelPolicy, 'current'>,
+): string | null {
+  let best: { label: string; score: number; index: number } | null = null;
+  labels.forEach((raw, index) => {
+    const label = normLabel(raw);
+    const score = scoreChatGptModelLabel(label, policy);
+    if (!Number.isFinite(score)) return;
+    if (!best || score > best.score || (score === best.score && index < best.index)) best = { label, score, index };
+  });
+  return best?.label ?? null;
+}
+
+function modelPickerText(el: HTMLElement): string {
+  return normLabel(`${el.getAttribute('aria-label') ?? ''} ${el.innerText ?? el.textContent ?? ''}`);
+}
+
+function findModelPickerButton(): HTMLElement | null {
+  const direct = q1(MODEL_PICKER_SELECTORS);
+  if (direct) return direct;
+  const buttons = Array.from(document.querySelectorAll('button')) as HTMLElement[];
+  return buttons
+    .map((button) => ({ button, score: Math.max(scoreChatGptModelLabel(modelPickerText(button), 'extract'), scoreChatGptModelLabel(modelPickerText(button), 'best')) }))
+    .filter((x) => Number.isFinite(x.score) && x.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.button ?? null;
+}
+
+function modelMenuItems(): HTMLElement[] {
+  const seen = new Set<HTMLElement>();
+  const out: HTMLElement[] = [];
+  for (const selector of MODEL_ITEM_SELECTORS) {
+    for (const el of Array.from(document.querySelectorAll(selector)) as HTMLElement[]) {
+      if (seen.has(el)) continue;
+      const text = normLabel(el.innerText ?? el.textContent ?? '');
+      if (!text || isUnavailableModelLabel(text) || isNonChatModelLabel(text)) continue;
+      if (!Number.isFinite(Math.max(scoreChatGptModelLabel(text, 'extract'), scoreChatGptModelLabel(text, 'best')))) continue;
+      seen.add(el);
+      out.push(el);
+    }
+  }
+  return out;
+}
+
+async function waitForModelItems(timeoutMs = 1500): Promise<HTMLElement[]> {
+  const start = Date.now();
+  do {
+    const items = modelMenuItems();
+    if (items.length) return items;
+    await sleep(100);
+  } while (Date.now() - start < timeoutMs);
+  return [];
+}
+
+// Best-effort model switching for ChatGPT's web UI. The labels and DOM are not a stable API, so this
+// intentionally fails open: if the menu cannot be read, the caller still submits with the current model.
+export async function selectChatGptModel(policy: ChatGptModelPolicy): Promise<boolean> {
+  if (policy === 'current') return true;
+  const picker = findModelPickerButton();
+  if (!picker) return false;
+  picker.click();
+  const items = await waitForModelItems();
+  const labels = items.map((el) => normLabel(el.innerText ?? el.textContent ?? ''));
+  const choice = chooseChatGptModelLabel(labels, policy);
+  const item = choice ? items.find((el) => normLabel(el.innerText ?? el.textContent ?? '') === choice) : null;
+  if (!item) {
+    picker.click();
+    return false;
+  }
+  item.click();
+  await sleep(250);
+  return true;
+}
 
 function q1(selectors: string[]): HTMLElement | null {
   for (const s of selectors) { const el = document.querySelector(s); if (el) return el as HTMLElement; }

@@ -2,7 +2,7 @@ import { ChatGPTCaptureAdapter } from './chatgpt';
 import { selectAcrossTimeline } from './select';
 import { buildChatGptExport } from './chatgpt-export';
 import { buildExtractionPrompt, buildExtractionSecondSweep, buildSynthesisFromEvidence, buildAuditPrompt } from './chatgpt-prompt';
-import { setComposer, clickSend, hasChallenge } from './chatgpt-bridge';
+import { setComposer, clickSend, hasChallenge, selectChatGptModel, type ChatGptModelPolicy } from './chatgpt-bridge';
 import { importGptReply, CAPTURE_KEY } from '../run/import-chatgpt';
 import { dedupeMoments, sameMoment, loadPool, savePool, mergePool, evictedConversations, type PoolUnit } from '../engine/evidence-pool';
 import { dlog } from '../debug/dlog';
@@ -138,9 +138,10 @@ async function awaitConversationId(
 // Fill the composer and click ChatGPT's own send button, retrying while React enables the button
 // (and, in a freshly spawned worker tab, while the composer is still mounting). A visible challenge
 // means we cannot submit unattended, so surface it rather than hang.
-async function submitPrompt(prompt: string, tries = 40, everyMs = 500): Promise<void> {
+async function submitPrompt(prompt: string, modelPolicy: ChatGptModelPolicy, tries = 40, everyMs = 500): Promise<void> {
   for (let i = 0; i < tries; i++) {
     if (hasChallenge()) throw new Error('ChatGPT is showing a verification step. Open chatgpt.com, then run again.');
+    await selectChatGptModel(modelPolicy).catch(() => false);
     if (setComposer(prompt) && clickSend()) return;
     await new Promise((r) => setTimeout(r, everyMs));
   }
@@ -241,13 +242,14 @@ interface TurnCtx {
   token: string;
   preTopId: string | null;
   id: string | null;
+  modelPolicy: ChatGptModelPolicy;
   lastNode?: string;
   onBound?: (id: string) => Promise<void> | void;
 }
 async function runTurnIn(ctx: TurnCtx, prompt: string, timeoutMs: number, notify: Notify): Promise<{ text: string; node: string }> {
   for (let attempt = 1; ; attempt++) {
     try {
-      await submitPrompt(prompt);
+      await submitPrompt(prompt, ctx.modelPolicy);
       if (!ctx.id) {
         ctx.id = await awaitConversationId(ctx.token, ctx.preTopId, prompt);
         if (!ctx.id) throw new Error('ChatGPT did not start a conversation.');
@@ -454,7 +456,7 @@ async function loadCkpt(): Promise<unknown> {
 export async function runExtractionBatch(batch: number, notify: Notify): Promise<void> {
   const write = (out: { units?: RawUnit[]; failed?: true }) =>
     chrome.storage.local.set({ [batchOutKey(batch)]: JSON.stringify(out) });
-  const ctx: TurnCtx = { token: '', preTopId: null, id: null };
+  const ctx: TurnCtx = { token: '', preTopId: null, id: null, modelPolicy: 'extract' };
   try {
     const stored = (await chrome.storage.local.get(CAPTURE_KEY))[CAPTURE_KEY];
     if (typeof stored !== 'string' || !stored) throw new Error('No capture bundle for the extraction batch.');
@@ -616,7 +618,7 @@ export async function runAutoProfile(notify: Notify): Promise<void> {
   if (plan.staleConvoId) await deleteConversation(plan.staleConvoId, token); // old throwaway from the interrupted run
   await cleanupBatchLeftovers(token); // stray worker conversations/results from the interrupted run
   const startedAt = new Date().toISOString();
-  const main: TurnCtx = { token, preTopId: await topConversationId(token), id: null };
+  const main: TurnCtx = { token, preTopId: await topConversationId(token), id: null, modelPolicy: 'best' };
 
   const ckpt = (synthText?: string): AutorunCheckpoint => ({
     v: 2, startedAt, totalBatches: batches.length, doneBatches: [...doneBatches],
